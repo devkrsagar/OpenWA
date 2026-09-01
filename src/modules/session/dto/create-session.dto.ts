@@ -64,4 +64,34 @@ export class CreateSessionDto {
   @IsOptional()
   @IsIn(['http', 'https', 'socks4', 'socks5'])
   proxyType?: 'http' | 'https' | 'socks4' | 'socks5';
+
+  @ApiPropertyOptional({
+    description: 'Engine type for this session (portal/web QR code vs Meta Official Cloud API)',
+    enum: ['portal', 'baileys', 'whatsapp-web.js', 'meta-cloud-api'],
+    example: 'portal',
+    default: 'portal',
+  })
+  @IsOptional()
+  @IsString()
+  engineType?: 'portal' | 'baileys' | 'whatsapp-web.js' | 'meta-cloud-api';
+
+  @ApiPropertyOptional({
+    description: 'Configuration for Meta Official WhatsApp Cloud API (phone number ID, permanent access token, WABA ID)',
+    example: {
+      phoneNumberId: '106540123456789',
+      wabaId: '109876543210987',
+      accessToken: 'EAAG...',
+      displayPhoneNumber: '+15551234567',
+    },
+  })
+  @IsOptional()
+  metaConfig?: {
+    phoneNumberId: string;
+    accessToken: string;
+    wabaId?: string;
+    apiVersion?: string;
+    displayPhoneNumber?: string;
+    businessName?: string;
+    verifyToken?: string;
+  };
 }

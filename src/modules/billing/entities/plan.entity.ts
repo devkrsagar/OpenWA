@@ -29,6 +29,9 @@ export class Plan {
   @Column({ type: 'integer', default: 1000 })
   maxMessagesPerMonth!: number;
 
+  @Column({ type: 'integer', default: 0 })
+  maxDripSequences!: number; // 0 = disabled, > 0 = limit count, -1 = unlimited
+
   @Column({ type: 'simple-json', nullable: true })
   features?: string[];
 

@@ -20,6 +20,12 @@ const Sessions = lazy(() => import('./pages/Sessions').then(m => ({ default: m.S
 const Chats = lazy(() => import('./pages/Chats').then(m => ({ default: m.Chats })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })));
+const Contacts = lazy(() => import('./pages/Contacts').then(m => ({ default: m.Contacts })));
+const Campaigns = lazy(() => import('./pages/Campaigns').then(m => ({ default: m.Campaigns })));
+const Automation = lazy(() => import('./pages/Automation').then(m => ({ default: m.Automation })));
+const AiBot = lazy(() => import('./pages/AiBot').then(m => ({ default: m.AiBot })));
+const Ecommerce = lazy(() => import('./pages/Ecommerce').then(m => ({ default: m.Ecommerce })));
+const DripSequences = lazy(() => import('./pages/DripSequences').then(m => ({ default: m.DripSequences })));
 const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users })));
 const Subscription = lazy(() => import('./pages/Subscription').then(m => ({ default: m.Subscription })));
 const Logs = lazy(() => import('./pages/Logs').then(m => ({ default: m.Logs })));
@@ -130,6 +136,12 @@ function AppContent() {
               <Route path="chats" element={<Chats />} />
               <Route path="webhooks" element={<Webhooks />} />
               <Route path="templates" element={<Templates />} />
+              <Route path="contacts" element={<Contacts />} />
+              <Route path="campaigns" element={<Campaigns />} />
+              <Route path="automation" element={<Automation />} />
+              <Route path="ai-bot" element={<AiBot />} />
+              <Route path="ecommerce" element={<Ecommerce />} />
+              <Route path="drip-sequences" element={<DripSequences />} />
               {role === 'admin' && <Route path="users" element={<Users />} />}
               <Route path="subscription" element={<Subscription />} />
               <Route path="api-keys" element={<ApiKeys />} />

@@ -7,6 +7,7 @@ import { WhatsAppWebJsAdapter } from './adapters/whatsapp-web-js.adapter';
 import { PluginLoaderService, PluginType, IEnginePlugin, PluginManifest } from '../core/plugins';
 import { WhatsAppWebJsPlugin } from './builtin/whatsapp-web-js';
 import { BaileysPlugin } from './builtin/baileys';
+import { MetaCloudApiPlugin } from './builtin/meta-cloud-api';
 import { createLogger } from '../common/services/logger.service';
 import { BaileysMessageStoreService } from './adapters/baileys-message-store.service';
 import { LidMappingStoreService } from './identity/lid-mapping-store.service';
@@ -20,6 +21,8 @@ export interface EngineCreateOptions {
   dbSessionId: string;
   proxyUrl?: string;
   proxyType?: 'http' | 'https' | 'socks4' | 'socks5';
+  engineType?: string;
+  metaConfig?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -79,7 +82,19 @@ export class EngineFactory implements OnModuleInit {
       engineConfig,
     );
 
-    // Auto-enable the configured engine
+    // Register Meta Cloud API as built-in engine plugin
+    const metaManifest: PluginManifest = {
+      id: 'meta-cloud-api',
+      name: 'Meta Official Cloud API Engine',
+      version: '1.0.0',
+      type: PluginType.ENGINE,
+      description: 'Meta Official WhatsApp Cloud API / Business Platform adapter',
+      main: 'index.ts',
+      provides: ['whatsapp-engine'],
+    };
+    this.pluginLoader.registerBuiltInPlugin(metaManifest, new MetaCloudApiPlugin(engineConfig), engineConfig);
+
+    // Auto-enable the configured default engine
     try {
       await this.pluginLoader.enablePlugin(this.engineType);
       this.logger.log(`Engine plugin enabled: ${this.engineType}`, {
@@ -104,21 +119,31 @@ export class EngineFactory implements OnModuleInit {
       throw new Error(`Refusing to create an engine for an unsafe session name: ${JSON.stringify(options.sessionId)}`);
     }
 
-    // Both engine shapes' credential dirs are made owner-only up front, whichever engine this
-    // session runs and whichever construction path serves it (plugin or fallback): a whatsapp-web.js
-    // profile and a baileys creds.json each hold everything needed to take over the linked account,
-    // so read access to the data volume must not be enough. Mirrors purgeSessionData, which removes
-    // BOTH shapes for the same engine-switch-residue reason.
+    const targetEngineType = options.engineType || (options.metaConfig ? 'meta-cloud-api' : this.engineType);
+
+    if (targetEngineType === 'meta-cloud-api') {
+      const metaPlugin = this.pluginLoader.getPlugin('meta-cloud-api');
+      if (metaPlugin?.instance && this.isEnginePlugin(metaPlugin.instance)) {
+        return metaPlugin.instance.createEngine({
+          sessionId: options.sessionId,
+          dbSessionId: options.dbSessionId,
+          metaConfig: options.metaConfig,
+        }) as IWhatsAppEngine;
+      }
+      return new MetaCloudApiPlugin().createEngine({
+        sessionId: options.sessionId,
+        metaConfig: options.metaConfig,
+      });
+    }
+
+    // Both engine shapes' credential dirs are made owner-only up front
     ensurePrivateDir(this.wwjsAuthDir(options.sessionId));
     ensurePrivateDir(this.baileysAuthDir(options.sessionId));
 
     // Try to get engine from plugin system
-    const enginePlugin = this.pluginLoader.getPlugin(this.engineType);
+    const enginePlugin = this.pluginLoader.getPlugin(targetEngineType);
 
     if (enginePlugin?.instance && this.isEnginePlugin(enginePlugin.instance)) {
-      // Engine-neutral per-call config only. Engine-specific config (e.g. Puppeteer for
-      // whatsapp-web.js) is supplied to the plugin as an opaque blob via context.config at
-      // registration, so the factory never assembles browser-shaped fields.
       return enginePlugin.instance.createEngine({
         sessionId: options.sessionId,
         dbSessionId: options.dbSessionId,
@@ -128,7 +153,7 @@ export class EngineFactory implements OnModuleInit {
     }
 
     // Fallback to direct adapter creation (legacy support)
-    this.logger.warn(`Engine plugin ${this.engineType} not available, using fallback`, {
+    this.logger.warn(`Engine plugin ${targetEngineType} not available, using fallback`, {
       action: 'engine_fallback',
     });
 

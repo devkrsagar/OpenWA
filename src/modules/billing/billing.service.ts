@@ -32,27 +32,63 @@ export class BillingService implements OnModuleInit {
       {
         id: 'free',
         name: 'Free Trial',
-        description: 'Perfect for exploring OpenWA gateway capabilities',
+        description: '7-Day Free Trial to explore OpenWA WhatsApp gateway capabilities',
         monthlyPrice: 0,
         yearlyPrice: 0,
         maxSessions: 1,
         maxMessagesPerMonth: 200,
-        features: ['1 WhatsApp Session', '200 Messages / Month', 'Webhooks Support', 'REST API Access'],
+        maxDripSequences: 1,
+        features: [
+          '7 Days Full Access',
+          '1 WhatsApp Session',
+          '200 Messages / Month',
+          '💧 1 Drip Campaign Sequence',
+          'Live Chat Hub & Multi-Media',
+          'Basic Webhooks Support',
+          'REST API Access',
+        ],
+        isActive: true,
+      },
+      {
+        id: 'basic',
+        name: 'Basic Plan',
+        description: 'Essential WhatsApp gateway for messaging & broadcasts without AI/Automations',
+        monthlyPrice: 349,
+        yearlyPrice: 3350, // ~20% discount (approx 279/mo)
+        maxSessions: 1,
+        maxMessagesPerMonth: 5000,
+        maxDripSequences: 0,
+        features: [
+          '1 WhatsApp Session',
+          '5,000 Messages / Month',
+          'Live Web Chat Hub (1-on-1 & Group Chats)',
+          'Contact Book & Audience Segmentation Tags',
+          'Message Templates & Bulk Broadcasts',
+          'Campaign Analytics & Delivery Reports',
+          'REST API & Event Webhooks Support',
+          '❌ Automation Rules, Drip Sequences, AI Bot & E-Commerce excluded',
+        ],
         isActive: true,
       },
       {
         id: 'starter',
         name: 'Starter Plan',
-        description: 'Ideal for small businesses and personal bots',
+        description: 'Ideal for small businesses with rule-based auto-replies & scheduled broadcasts',
         monthlyPrice: 749,
         yearlyPrice: 7190, // 20% discount
         maxSessions: 2,
-        maxMessagesPerMonth: 10000,
+        maxMessagesPerMonth: 15000,
+        maxDripSequences: 3,
         features: [
           '2 WhatsApp Sessions',
-          '10,000 Messages / Month',
-          'Webhooks & Auto-Replies',
-          'Message Templates',
+          '15,000 Messages / Month',
+          'All Basic Features Included',
+          '⚡ Automation Rules (Welcome & Away Messages)',
+          '⏰ Scheduled Broadcasts (Future Date/Time Campaigns)',
+          '💧 3 Multi-Step Drip Sequences',
+          'Keyword Auto-Replies & Cooldown Anti-Spam',
+          'Contact Book with CSV Bulk Import / Export',
+          'Campaign Performance Reports & CSV Export',
           'Standard Support',
         ],
         isActive: true,
@@ -60,16 +96,21 @@ export class BillingService implements OnModuleInit {
       {
         id: 'pro',
         name: 'Pro Business',
-        description: 'High-throughput automation for growing teams',
+        description: 'High-throughput automation with Drip Sequences, AI Bot & E-Commerce Webhooks',
         monthlyPrice: 1999,
         yearlyPrice: 19190,
         maxSessions: 5,
-        maxMessagesPerMonth: 50000,
+        maxMessagesPerMonth: 60000,
+        maxDripSequences: 25,
         features: [
           '5 WhatsApp Sessions',
-          '50,000 Messages / Month',
-          'High Priority Message Queue',
-          'Multi-device Pairing',
+          '60,000 Messages / Month',
+          'All Starter Features Included',
+          '💧 25 Automated Drip Sequences (Tag-Triggered)',
+          '🤖 AI Chatbot Engine (OpenAI GPT-4o, Gemini, Claude)',
+          '🛒 E-Commerce & CRM Webhooks (Shopify, WooCommerce, Stripe)',
+          'High Priority Message Queue & Webhooks',
+          'Live Chatbot Sandbox Simulator',
           'Priority Support',
         ],
         isActive: true,
@@ -77,17 +118,21 @@ export class BillingService implements OnModuleInit {
       {
         id: 'enterprise',
         name: 'Enterprise Scale',
-        description: 'Dedicated infrastructure with high session limits',
+        description: 'Dedicated infrastructure with high session limits & custom integrations',
         monthlyPrice: 4999,
         yearlyPrice: 47990,
         maxSessions: 20,
-        maxMessagesPerMonth: 250000,
+        maxMessagesPerMonth: 300000,
+        maxDripSequences: -1, // Unlimited
         features: [
           '20 WhatsApp Sessions',
-          '250,000 Messages / Month',
+          '300,000 Messages / Month',
+          'All Pro Features Included',
+          '💧 Unlimited Drip Sequences & Scheduled Campaigns',
+          'Unlimited AI Chatbot Turns & Custom Endpoint / Ollama',
+          'Full E-Commerce Webhook Hub with Custom Ingress Rules',
           'Dedicated Queues & Zero Rate Limit',
-          'Custom Webhooks & Integrations',
-          '24/7 Dedicated SLA',
+          '24/7 Dedicated Priority SLA',
         ],
         isActive: true,
       },
@@ -98,15 +143,25 @@ export class BillingService implements OnModuleInit {
       if (!exists) {
         await this.planRepo.save(this.planRepo.create(plan));
       } else {
+        exists.name = plan.name!;
+        exists.description = plan.description!;
         exists.monthlyPrice = plan.monthlyPrice!;
         exists.yearlyPrice = plan.yearlyPrice!;
+        exists.maxSessions = plan.maxSessions!;
+        exists.maxMessagesPerMonth = plan.maxMessagesPerMonth!;
+        exists.maxDripSequences = plan.maxDripSequences !== undefined ? plan.maxDripSequences : 0;
+        exists.features = plan.features!;
+        exists.isActive = plan.isActive!;
         await this.planRepo.save(exists);
       }
     }
   }
 
   async getAllPlans(): Promise<Plan[]> {
-    return this.planRepo.find({ where: { isActive: true } });
+    return this.planRepo.find({
+      where: { isActive: true },
+      order: { monthlyPrice: 'ASC' },
+    });
   }
 
   async getPlanById(id: string): Promise<Plan> {
@@ -121,7 +176,7 @@ export class BillingService implements OnModuleInit {
     const freePlan = await this.getPlanById('free');
     const now = new Date();
     const endDate = new Date();
-    endDate.setDate(now.getDate() + 30); // 30-day initial cycle
+    endDate.setDate(now.getDate() + 7); // 7-day Free Trial period
 
     const sub = this.subRepo.create({
       userId: user.id,
@@ -149,7 +204,9 @@ export class BillingService implements OnModuleInit {
 
     const now = new Date();
     const endDate = new Date();
-    if (billingCycle === BillingCycle.YEARLY) {
+    if (plan.id === 'free') {
+      endDate.setDate(now.getDate() + 7); // 7-day Free Trial
+    } else if (billingCycle === BillingCycle.YEARLY) {
       endDate.setFullYear(now.getFullYear() + 1);
     } else {
       endDate.setMonth(now.getMonth() + 1);

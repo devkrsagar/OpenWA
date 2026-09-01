@@ -10,6 +10,7 @@ import { WebhookService } from './webhook.service';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { WebhookController } from './webhook.controller';
 import { WebhooksListController } from './webhooks-list.controller';
+import { MetaWebhookController } from './meta-webhook.controller';
 import { EngineModule } from '../../engine/engine.module';
 
 // Only import QueueModule if explicitly enabled to avoid Redis connection errors
@@ -28,7 +29,7 @@ if (process.env.QUEUE_ENABLED === 'true') {
     EngineModule,
     ...queueModules,
   ],
-  controllers: [WebhookController, WebhooksListController],
+  controllers: [WebhookController, WebhooksListController, MetaWebhookController],
   providers: [WebhookService, WebhookDeliveryService, WebhookOutboxService, WebhookReconcilerService],
   exports: [WebhookService],
 })

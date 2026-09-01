@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { sessionApi, type Session } from '../services/api';
+import { sessionApi, type Session, type CreateSessionOptions } from '../services/api';
 import { useToast } from './useToast';
 
 export interface UseSessionCreateFormArgs {
@@ -8,35 +8,82 @@ export interface UseSessionCreateFormArgs {
   onFailed: (message: string) => void;
 }
 
+export interface MetaConfigForm {
+  phoneNumberId: string;
+  accessToken: string;
+  wabaId: string;
+  displayPhoneNumber: string;
+  businessName: string;
+  verifyToken: string;
+}
+
 export interface SessionCreateForm {
   showCreateModal: boolean;
   setShowCreateModal: (open: boolean) => void;
   newSessionName: string;
   setNewSessionName: (name: string) => void;
+  engineType: 'portal' | 'meta-cloud-api';
+  setEngineType: (type: 'portal' | 'meta-cloud-api') => void;
+  metaConfig: MetaConfigForm;
+  setMetaConfig: React.Dispatch<React.SetStateAction<MetaConfigForm>>;
   creating: boolean;
   handleCreate: () => Promise<void>;
 }
 
-/**
- * Owns the "New Session" modal: its open/closed state, the typed name, and the in-flight `creating`
- * flag. This is a separate feature from onboarding a session onto WhatsApp — `handleCreate` never
- * touches `qrData`/pairing state and never opens the QR modal (that's `handleStart`/`handleShowQR`).
- * Its only outward edges are the created `Session` and a failure message: the page owns appending to
- * `sessions` and invalidating the shared query cache, so this hook stays independent of that state.
- */
 export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFormArgs): SessionCreateForm {
   const { t } = useTranslation();
   const toast = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
+  const [engineType, setEngineType] = useState<'portal' | 'meta-cloud-api'>('portal');
+  const [metaConfig, setMetaConfig] = useState<MetaConfigForm>({
+    phoneNumberId: '',
+    accessToken: '',
+    wabaId: '',
+    displayPhoneNumber: '',
+    businessName: '',
+    verifyToken: '',
+  });
   const [creating, setCreating] = useState(false);
 
   const handleCreate = async () => {
     if (!newSessionName.trim()) return;
+
+    if (engineType === 'meta-cloud-api') {
+      if (!metaConfig.phoneNumberId.trim() || !metaConfig.accessToken.trim()) {
+        toast.error('Validation Error', 'Phone Number ID and Access Token are required for Meta Cloud API.');
+        return;
+      }
+    }
+
     try {
       setCreating(true);
-      const newSession = await sessionApi.create(newSessionName);
+      const payload: CreateSessionOptions = {
+        name: newSessionName.trim(),
+        engineType,
+        metaConfig:
+          engineType === 'meta-cloud-api'
+            ? {
+                phoneNumberId: metaConfig.phoneNumberId.trim(),
+                accessToken: metaConfig.accessToken.trim(),
+                wabaId: metaConfig.wabaId.trim() || undefined,
+                displayPhoneNumber: metaConfig.displayPhoneNumber.trim() || undefined,
+                businessName: metaConfig.businessName.trim() || undefined,
+                verifyToken: metaConfig.verifyToken.trim() || undefined,
+              }
+            : undefined,
+      };
+
+      const newSession = await sessionApi.create(payload);
       setNewSessionName('');
+      setMetaConfig({
+        phoneNumberId: '',
+        accessToken: '',
+        wabaId: '',
+        displayPhoneNumber: '',
+        businessName: '',
+        verifyToken: '',
+      });
       setShowCreateModal(false);
       toast.success(t('sessions.create.successTitle'), t('sessions.create.successDesc', { name: newSession.name }));
       onCreated(newSession);
@@ -49,5 +96,16 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
     }
   };
 
-  return { showCreateModal, setShowCreateModal, newSessionName, setNewSessionName, creating, handleCreate };
+  return {
+    showCreateModal,
+    setShowCreateModal,
+    newSessionName,
+    setNewSessionName,
+    engineType,
+    setEngineType,
+    metaConfig,
+    setMetaConfig,
+    creating,
+    handleCreate,
+  };
 }

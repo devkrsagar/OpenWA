@@ -256,6 +256,147 @@ select:disabled {
   box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.1);
 }
 
+.modal-body textarea {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  background: var(--bg-light, #f8fafc);
+  transition: all 0.2s;
+  box-sizing: border-box;
+  resize: vertical;
+  display: block;
+}
+
+.modal-body textarea:focus {
+  outline: none;
+  border-color: var(--primary, #25d366);
+  background: var(--bg-white, #fff);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.1);
+}
+
+/* Universal Form Groups & Inputs */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  margin-bottom: 2px;
+}
+
+.input-field,
+.textarea-field,
+.form-group select,
+.form-group input[type='text'],
+.form-group input[type='password'],
+.form-group input[type='number'],
+.form-group textarea {
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  border-radius: 8px;
+  border: 1px solid var(--border, #cbd5e1);
+  background: var(--bg-light, #f8fafc);
+  color: var(--text-primary, #0f172a);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-field:focus,
+.textarea-field:focus,
+.form-group select:focus,
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--primary, #22c55e);
+  background: var(--bg-white, #fff);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+}
+
+.form-helper-text {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.4;
+  margin-top: 2px;
+  display: block;
+}
+
+.required-star {
+  color: #ef4444;
+  margin-left: 2px;
+}
+
+/* Universal Tag Input & Chip Badges */
+.tag-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tag-input-row .input-field,
+.tag-input-row input {
+  flex: 1;
+}
+
+.tag-add-btn {
+  white-space: nowrap;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.contact-tag-badge,
+.tag-chip-badge {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contact-tag-badge.removable,
+.tag-chip-badge.removable {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.contact-tag-badge.removable:hover,
+.tag-chip-badge.removable:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
 /* The rule above is meant for TEXT inputs. Radios/checkboxes would otherwise stretch to width:100%
    and shove their labels far to the right; reset them back to their native box. The :not() excludes
    the visually-hidden toggle-switch checkbox (it must stay width:0) so this never ties with the

@@ -45,6 +45,37 @@ export class CreateTemplateDto {
   @IsString()
   @MaxLength(HEADER_FOOTER_MAX_LENGTH)
   footer?: string;
+
+  @ApiPropertyOptional({
+    description: 'Meta template category (MARKETING, UTILITY, AUTHENTICATION)',
+    enum: ['MARKETING', 'UTILITY', 'AUTHENTICATION'],
+    default: 'MARKETING',
+  })
+  @IsOptional()
+  @IsString()
+  category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+
+  @ApiPropertyOptional({
+    description: 'Template language code',
+    default: 'en_US',
+    example: 'en_US',
+  })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether to immediately submit this template to Meta for approval',
+    default: false,
+  })
+  @IsOptional()
+  submitToMeta?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Optional interactive buttons or structured components',
+  })
+  @IsOptional()
+  components?: Record<string, unknown>[];
 }
 
 export class UpdateTemplateDto {
@@ -73,6 +104,16 @@ export class UpdateTemplateDto {
   @IsString()
   @MaxLength(HEADER_FOOTER_MAX_LENGTH)
   footer?: string;
+
+  @ApiPropertyOptional({ enum: ['MARKETING', 'UTILITY', 'AUTHENTICATION'] })
+  @IsOptional()
+  @IsString()
+  category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+
+  @ApiPropertyOptional({ description: 'Template language code' })
+  @IsOptional()
+  @IsString()
+  language?: string;
 }
 
 export class TemplateResponseDto {
@@ -93,6 +134,21 @@ export class TemplateResponseDto {
 
   @ApiPropertyOptional({ type: String, nullable: true })
   footer?: string | null;
+
+  @ApiPropertyOptional({ enum: ['MARKETING', 'UTILITY', 'AUTHENTICATION'] })
+  category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+
+  @ApiPropertyOptional({ type: String })
+  language?: string;
+
+  @ApiPropertyOptional({ enum: ['APPROVED', 'PENDING', 'REJECTED', 'PAUSED', 'LOCAL'] })
+  status?: 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED' | 'LOCAL';
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  metaTemplateId?: string | null;
+
+  @ApiPropertyOptional()
+  components?: Record<string, unknown>[] | null;
 
   @ApiProperty()
   createdAt!: Date;

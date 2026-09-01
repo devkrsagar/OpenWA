@@ -536,11 +536,16 @@ export class SessionEngineLifecycle {
       proxyEnabled: !!session.proxyUrl,
     });
 
+    const sessionConfig = (session.config || {}) as Record<string, any>;
+    const engineType = sessionConfig.engineType || (sessionConfig.metaConfig ? 'meta-cloud-api' : undefined);
+
     const engine = this.engineFactory.create({
       sessionId: session.name,
       dbSessionId: id,
       proxyUrl: session.proxyUrl || undefined,
       proxyType: session.proxyType || undefined,
+      engineType,
+      metaConfig: sessionConfig.metaConfig,
     });
     this.engines.set(id, engine, session.name);
     // Presence subscriptions live on the socket, so a fresh engine has none — whatever the previous

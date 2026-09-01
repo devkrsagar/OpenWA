@@ -39,6 +39,21 @@ export class Template {
   @Column({ type: 'text', nullable: true })
   footer!: string | null;
 
+  @Column({ type: 'varchar', length: 50, default: 'MARKETING' })
+  category!: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+
+  @Column({ type: 'varchar', length: 20, default: 'en_US' })
+  language!: string;
+
+  @Column({ type: 'varchar', length: 30, default: 'LOCAL' })
+  status!: 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED' | 'LOCAL';
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  metaTemplateId!: string | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  components!: Record<string, unknown>[] | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

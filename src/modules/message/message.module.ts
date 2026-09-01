@@ -6,6 +6,7 @@ import { BulkMessageService } from './bulk-message.service';
 import { MessageTypeBackfillService } from './message-type-backfill.service';
 import { PendingMessageReaperService } from './pending-message-reaper.service';
 import { MessageController } from './message.controller';
+import { CampaignController } from './campaign.controller';
 import { SessionModule } from '../session/session.module';
 import { TemplateModule } from '../template/template.module';
 import { ChatMediaModule } from '../chat-media/chat-media.module';
@@ -22,7 +23,7 @@ import { PLUGIN_MESSAGE_PORT } from '../../core/plugins/plugin-host-ports';
     TemplateModule,
     ChatMediaModule,
   ],
-  controllers: [MessageController],
+  controllers: [MessageController, CampaignController],
   providers: [
     MessageService,
     MessageSendService,

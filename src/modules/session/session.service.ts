@@ -268,12 +268,22 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
       throw new ConflictException(`Session with name '${dto.name}' already exists`);
     }
 
+    const mergedConfig: Record<string, unknown> = {
+      ...(dto.config || {}),
+      ...(dto.engineType ? { engineType: dto.engineType } : {}),
+      ...(dto.metaConfig ? { metaConfig: dto.metaConfig } : {}),
+    };
+
+    const isMeta = dto.engineType === 'meta-cloud-api' || !!dto.metaConfig;
+
     const session = this.sessionRepository.create({
       name: dto.name,
-      config: dto.config || {},
+      config: mergedConfig,
       proxyUrl: dto.proxyUrl || null,
       proxyType: dto.proxyType || null,
       userId: userId || null,
+      phone: isMeta ? (dto.metaConfig?.displayPhoneNumber || dto.metaConfig?.phoneNumberId || null) : null,
+      pushName: isMeta ? (dto.metaConfig?.businessName || 'Meta WhatsApp Business') : null,
       status: SessionStatus.CREATED,
     });
 

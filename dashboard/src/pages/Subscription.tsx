@@ -65,7 +65,8 @@ export function Subscription() {
         billingApi.getMyRequests().catch(() => []),
         userAuthApi.getMe().catch(() => null),
       ]);
-      setPlans(plansData || []);
+      const sortedPlans = (plansData || []).slice().sort((a, b) => a.monthlyPrice - b.monthlyPrice);
+      setPlans(sortedPlans);
       setCurrentSub(subData);
       setGatewayConfig(configData);
       setMyRequests(reqsData || []);
@@ -311,7 +312,9 @@ export function Subscription() {
                 <div className="plan-price-block">
                   <span className="currency">₹</span>
                   <span className="price-number">{price.toLocaleString('en-IN')}</span>
-                  <span className="period">/{billingCycle === 'yearly' ? 'yr' : 'mo'}</span>
+                  <span className="period">
+                    {plan.id === 'free' ? '/ 7 days' : `/${billingCycle === 'yearly' ? 'yr' : 'mo'}`}
+                  </span>
                 </div>
 
                 <div className="plan-limits">
@@ -320,6 +323,16 @@ export function Subscription() {
                   </div>
                   <div className="limit-item">
                     <strong>{plan.maxMessagesPerMonth.toLocaleString()}</strong> Messages / Month
+                  </div>
+                  <div className="limit-item">
+                    <strong>
+                      {plan.maxDripSequences === undefined || plan.maxDripSequences === 0
+                        ? 'No'
+                        : plan.maxDripSequences === -1
+                        ? 'Unlimited'
+                        : plan.maxDripSequences}
+                    </strong>{' '}
+                    Drip {plan.maxDripSequences === 1 ? 'Sequence' : 'Sequences'}
                   </div>
                 </div>
 

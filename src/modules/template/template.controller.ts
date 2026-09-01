@@ -11,6 +11,15 @@ import { ApiKeyRole } from '../auth/entities/api-key.entity';
 export class TemplateController {
   constructor(private readonly templateService: TemplateService) {}
 
+  @Post('sync-meta')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @ApiOperation({ summary: 'Sync official message templates from Meta WhatsApp Business Account' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Templates synced from Meta' })
+  async syncMeta(@Param('sessionId') sessionId: string): Promise<{ synced: number; templates: Template[] }> {
+    return this.templateService.syncMetaTemplates(sessionId);
+  }
+
   @Post()
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Create a message template for the session' })

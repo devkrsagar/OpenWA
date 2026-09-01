@@ -147,6 +147,11 @@ export interface MessageTemplate {
   body: string;
   header?: string | null;
   footer?: string | null;
+  category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+  language?: string;
+  status?: 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED' | 'LOCAL';
+  metaTemplateId?: string | null;
+  components?: Record<string, unknown>[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -156,6 +161,10 @@ export interface TemplatePayload {
   body: string;
   header?: string | null;
   footer?: string | null;
+  category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+  language?: string;
+  submitToMeta?: boolean;
+  components?: Record<string, unknown>[];
 }
 
 export interface ApiKey {
@@ -764,15 +773,31 @@ async function requestBlob(endpoint: string): Promise<Blob> {
 // Session API
 // =============================================================================
 
+export interface CreateSessionOptions {
+  name: string;
+  engineType?: 'portal' | 'baileys' | 'whatsapp-web.js' | 'meta-cloud-api';
+  metaConfig?: {
+    phoneNumberId: string;
+    accessToken: string;
+    wabaId?: string;
+    apiVersion?: string;
+    displayPhoneNumber?: string;
+    businessName?: string;
+    verifyToken?: string;
+  };
+}
+
 export const sessionApi = {
   list: (params?: { userId?: string }) =>
     request<Session[]>(`/sessions${params?.userId ? `?userId=${encodeURIComponent(params.userId)}` : ''}`),
   get: (id: string) => request<Session>(`/sessions/${id}`),
-  create: (name: string) =>
-    request<Session>('/sessions', {
+  create: (input: string | CreateSessionOptions) => {
+    const body = typeof input === 'string' ? { name: input } : input;
+    return request<Session>('/sessions', {
       method: 'POST',
-      body: JSON.stringify({ name }),
-    }),
+      body: JSON.stringify(body),
+    });
+  },
   delete: (id: string) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
   getConfig: (id: string) => request<SessionConfig>(`/sessions/${id}/config`),
   // PATCH merges: only the keys sent are touched. Send null to clear one back to its default.
@@ -879,6 +904,10 @@ export const webhookApi = {
 
 export const templateApi = {
   list: (sessionId: string) => request<MessageTemplate[]>(`/sessions/${sessionId}/templates`),
+  syncMeta: (sessionId: string) =>
+    request<{ synced: number; templates: MessageTemplate[] }>(`/sessions/${sessionId}/templates/sync-meta`, {
+      method: 'POST',
+    }),
   create: (sessionId: string, data: TemplatePayload) =>
     request<MessageTemplate>(`/sessions/${sessionId}/templates`, {
       method: 'POST',
@@ -908,6 +937,86 @@ export interface ProfilePictureResponse {
   /** Signed CDN URL for the contact/group picture, or null when hidden / unavailable. */
   url: string | null;
 }
+
+export interface ContactBookItem {
+  id: string;
+  sessionId?: string | null;
+  phone: string;
+  name: string;
+  email?: string | null;
+  tags?: string[] | null;
+  customFields?: Record<string, string> | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateContactPayload {
+  sessionId?: string;
+  phone: string;
+  name?: string;
+  email?: string;
+  tags?: string[];
+  customFields?: Record<string, string>;
+  notes?: string;
+}
+
+export interface ImportContactsPayload {
+  sessionId?: string;
+  contacts: Array<{
+    phone: string;
+    name?: string;
+    email?: string;
+    tags?: string[];
+    customFields?: Record<string, string>;
+    notes?: string;
+  }>;
+  defaultTags?: string[];
+}
+
+export const contactBookApi = {
+  list: (params: { sessionId?: string; tag?: string; search?: string; limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.sessionId) query.set('sessionId', params.sessionId);
+    if (params.tag && params.tag !== 'ALL') query.set('tag', params.tag);
+    if (params.search) query.set('search', params.search);
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.offset) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return request<{ items: ContactBookItem[]; total: number }>(`/contact-book${qs ? `?${qs}` : ''}`);
+  },
+  getTags: (sessionId?: string) => {
+    const qs = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    return request<Array<{ tag: string; count: number }>>(`/contact-book/tags${qs}`);
+  },
+  get: (id: string) => request<ContactBookItem>(`/contact-book/${id}`),
+  create: (data: CreateContactPayload) =>
+    request<ContactBookItem>('/contact-book', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<CreateContactPayload>) =>
+    request<ContactBookItem>(`/contact-book/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) => request<void>(`/contact-book/${id}`, { method: 'DELETE' }),
+  import: (data: ImportContactsPayload) =>
+    request<{ totalImported: number; totalUpdated: number }>('/contact-book/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkTag: (data: { contactIds: string[]; addTags?: string[]; removeTags?: string[] }) =>
+    request<{ updatedCount: number }>('/contact-book/bulk-tag', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkDelete: (contactIds: string[]) =>
+    request<{ deletedCount: number }>('/contact-book/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ contactIds }),
+    }),
+};
 
 export const contactApi = {
   list: (sessionId: string) => request<Contact[]>(`/sessions/${sessionId}/contacts`),
@@ -1398,6 +1507,7 @@ export interface Plan {
   yearlyPrice: number;
   maxSessions: number;
   maxMessagesPerMonth: number;
+  maxDripSequences?: number;
   features?: string[];
   isActive: boolean;
 }
@@ -1571,4 +1681,446 @@ export const adminBillingApi = {
       body: JSON.stringify(data),
     }),
 };
+
+// =============================================================================
+// Campaign & Performance Analytics API
+// =============================================================================
+
+export interface CampaignItem {
+  id: string;
+  batchId: string;
+  sessionId: string;
+  status: 'pending' | 'processing' | 'completed' | 'cancelled' | 'failed';
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  pendingCount: number;
+  deliveryRate: number;
+  options?: {
+    delayBetweenMessages: number;
+    randomizeDelay: boolean;
+    stopOnError: boolean;
+  };
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+}
+
+export interface CampaignOverview {
+  totalCampaigns: number;
+  totalRecipients: number;
+  totalSent: number;
+  totalFailed: number;
+  totalPending: number;
+  overallDeliveryRate: number;
+  activeCampaigns: number;
+  statusDistribution: Record<string, number>;
+  dailyActivity: Array<{ date: string; sent: number; failed: number; total: number }>;
+}
+
+export interface CampaignRecipient {
+  index: number;
+  chatId: string;
+  phone: string;
+  type: string;
+  variables?: Record<string, string>;
+  status: 'pending' | 'sent' | 'failed' | 'cancelled';
+  messageId?: string;
+  error?: string | null;
+  sentAt?: string | null;
+}
+
+export interface CampaignDetail extends CampaignItem {
+  recipients: CampaignRecipient[];
+}
+
+export const campaignApi = {
+  list: (params?: { sessionId?: string; status?: string; limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.sessionId) query.set('sessionId', params.sessionId);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return request<{ items: CampaignItem[]; total: number }>(`/campaigns${qs ? `?${qs}` : ''}`);
+  },
+  getOverview: (sessionId?: string) => {
+    const qs = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    return request<CampaignOverview>(`/campaigns/analytics/overview${qs}`);
+  },
+  getDetail: (id: string) => request<CampaignDetail>(`/campaigns/${id}`),
+  exportCsvUrl: (id: string) => `${API_BASE_URL}/campaigns/${id}/export`,
+};
+
+// =============================================================================
+// Automation Rules API
+// =============================================================================
+
+export interface AutomationRuleItem {
+  id: string;
+  sessionId: string;
+  name: string;
+  enabled: boolean;
+  conditions: {
+    conditions: Array<{
+      field: string;
+      operator: 'is' | 'isNot' | 'contains' | 'equals';
+      value: string | string[] | boolean;
+      caseSensitive?: boolean;
+    }>;
+  } | null;
+  replyText: string;
+  cooldownSeconds: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAutomationRulePayload {
+  name: string;
+  replyText: string;
+  conditions?: AutomationRuleItem['conditions'];
+  cooldownSeconds?: number;
+  enabled?: boolean;
+}
+
+export interface UpdateAutomationRulePayload {
+  name?: string;
+  replyText?: string;
+  conditions?: AutomationRuleItem['conditions'];
+  cooldownSeconds?: number;
+  enabled?: boolean;
+}
+
+export const automationApi = {
+  list: (sessionId: string) =>
+    request<AutomationRuleItem[]>(`/sessions/${sessionId}/automation-rules`),
+  get: (sessionId: string, ruleId: string) =>
+    request<AutomationRuleItem>(`/sessions/${sessionId}/automation-rules/${ruleId}`),
+  create: (sessionId: string, data: CreateAutomationRulePayload) =>
+    request<AutomationRuleItem>(`/sessions/${sessionId}/automation-rules`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (sessionId: string, ruleId: string, data: UpdateAutomationRulePayload) =>
+    request<AutomationRuleItem>(`/sessions/${sessionId}/automation-rules/${ruleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (sessionId: string, ruleId: string) =>
+    request<void>(`/sessions/${sessionId}/automation-rules/${ruleId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// =============================================================================
+// AI Chatbot & Auto-Responder API
+// =============================================================================
+
+export interface AiBotConfigItem {
+  id: string;
+  sessionId: string;
+  enabled: boolean;
+  provider: 'openai' | 'gemini' | 'claude' | 'custom';
+  apiKey: string | null;
+  model: string;
+  baseUrl: string | null;
+  systemPrompt: string | null;
+  temperature: number;
+  maxTokens: number;
+  memoryDepth: number;
+  humanHandoffKeywords: string[] | null;
+  excludeGroups: boolean;
+  typingDelaySeconds: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveAiBotConfigPayload {
+  enabled?: boolean;
+  provider?: string;
+  apiKey?: string | null;
+  model?: string;
+  baseUrl?: string | null;
+  systemPrompt?: string | null;
+  temperature?: number;
+  maxTokens?: number;
+  memoryDepth?: number;
+  humanHandoffKeywords?: string[] | null;
+  excludeGroups?: boolean;
+  typingDelaySeconds?: number;
+}
+
+export interface TestAiPromptPayload {
+  provider: string;
+  apiKey?: string;
+  model: string;
+  baseUrl?: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  message: string;
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+}
+
+export const aiBotApi = {
+  get: (sessionId: string) => request<AiBotConfigItem | null>(`/sessions/${sessionId}/ai-bot`),
+  save: (sessionId: string, data: SaveAiBotConfigPayload) =>
+    request<AiBotConfigItem>(`/sessions/${sessionId}/ai-bot`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  test: (data: TestAiPromptPayload) =>
+    request<{ response: string; model: string; durationMs: number }>(`/ai-bot/test`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+// =============================================================================
+// E-Commerce & CRM Webhook Automations API
+// =============================================================================
+
+export interface EcommerceAutomationItem {
+  id: string;
+  sessionId: string;
+  name: string;
+  platform: 'shopify' | 'woocommerce' | 'stripe' | 'custom';
+  eventType: 'abandoned_cart' | 'order_created' | 'order_fulfilled' | 'payment_received' | 'custom_webhook';
+  webhookSecret: string | null;
+  enabled: boolean;
+  phoneFieldPath: string | null;
+  templateMessage: string;
+  delayMinutes: number;
+  triggerCount: number;
+  lastTriggeredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EcommerceLogItem {
+  id: string;
+  automationId: string;
+  sessionId: string;
+  eventType: string;
+  platform: string;
+  recipientPhone: string;
+  orderId: string | null;
+  customerName: string | null;
+  status: 'delivered' | 'failed' | 'skipped';
+  variablesJson: string | null;
+  messageText: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface CreateEcommercePayload {
+  name: string;
+  platform: string;
+  eventType: string;
+  webhookSecret?: string | null;
+  enabled?: boolean;
+  phoneFieldPath?: string | null;
+  templateMessage: string;
+  delayMinutes?: number;
+}
+
+export interface UpdateEcommercePayload {
+  name?: string;
+  platform?: string;
+  eventType?: string;
+  webhookSecret?: string | null;
+  enabled?: boolean;
+  phoneFieldPath?: string | null;
+  templateMessage?: string;
+  delayMinutes?: number;
+}
+
+export interface TestEcommercePayload {
+  platform: string;
+  eventType: string;
+  templateMessage: string;
+  payload: Record<string, any>;
+}
+
+export const ecommerceApi = {
+  list: (sessionId: string) =>
+    request<EcommerceAutomationItem[]>(`/sessions/${sessionId}/ecommerce`),
+  create: (sessionId: string, data: CreateEcommercePayload) =>
+    request<EcommerceAutomationItem>(`/sessions/${sessionId}/ecommerce`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (sessionId: string, id: string, data: UpdateEcommercePayload) =>
+    request<EcommerceAutomationItem>(`/sessions/${sessionId}/ecommerce/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (sessionId: string, id: string) =>
+    request<{ success: boolean }>(`/sessions/${sessionId}/ecommerce/${id}`, {
+      method: 'DELETE',
+    }),
+  getLogs: (sessionId: string, automationId?: string) => {
+    const qs = automationId ? `?automationId=${encodeURIComponent(automationId)}` : '';
+    return request<EcommerceLogItem[]>(`/sessions/${sessionId}/ecommerce/logs${qs}`);
+  },
+  test: (data: TestEcommercePayload) =>
+    request<{ extractedVariables: Record<string, string>; renderedMessage: string; targetChatId: string }>(
+      `/ecommerce/test`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    ),
+  getWebhookUrl: (automationId: string) =>
+    `${window.location.origin}/api/ecommerce/webhook/${automationId}`,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⏰ Scheduled Broadcasts & Drip Sequences
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ScheduledBroadcastItem {
+  id: string;
+  sessionId: string;
+  name: string;
+  scheduledAt: string;
+  status: 'scheduled' | 'running' | 'completed' | 'cancelled' | 'failed';
+  targetType: 'tags' | 'numbers' | 'all';
+  targetAudience: string;
+  templateMessage: string;
+  pacingDelaySeconds: number;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  executedAt?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DripStepItem {
+  id?: string;
+  sequenceId?: string;
+  stepOrder: number;
+  delayHours: number;
+  templateMessage: string;
+  sentCount?: number;
+  createdAt?: string;
+}
+
+export interface DripSequenceItem {
+  id: string;
+  sessionId: string;
+  name: string;
+  description?: string | null;
+  triggerTag: string;
+  enabled: boolean;
+  totalEnrolled: number;
+  totalCompleted: number;
+  steps: DripStepItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DripSubscriberItem {
+  id: string;
+  sequenceId: string;
+  sessionId: string;
+  phone: string;
+  contactName?: string | null;
+  currentStep: number;
+  nextRunAt: string;
+  status: 'active' | 'completed' | 'unsubscribed' | 'failed';
+  lastMessageSentAt?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+}
+
+export const dripApi = {
+  getBroadcasts: (sessionId: string) =>
+    request<ScheduledBroadcastItem[]>(`/sessions/${encodeURIComponent(sessionId)}/scheduled-broadcasts`),
+  createBroadcast: (
+    sessionId: string,
+    data: {
+      name: string;
+      scheduledAt: string;
+      targetType: 'tags' | 'numbers' | 'all';
+      targetAudience: string;
+      templateMessage: string;
+      pacingDelaySeconds?: number;
+    },
+  ) =>
+    request<ScheduledBroadcastItem>(`/sessions/${encodeURIComponent(sessionId)}/scheduled-broadcasts`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  cancelBroadcast: (sessionId: string, id: string) =>
+    request<ScheduledBroadcastItem>(
+      `/sessions/${encodeURIComponent(sessionId)}/scheduled-broadcasts/${encodeURIComponent(id)}/cancel`,
+      {
+        method: 'POST',
+      },
+    ),
+  deleteBroadcast: (sessionId: string, id: string) =>
+    request<{ success: boolean }>(
+      `/sessions/${encodeURIComponent(sessionId)}/scheduled-broadcasts/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+      },
+    ),
+  getSequences: (sessionId: string) =>
+    request<DripSequenceItem[]>(`/sessions/${encodeURIComponent(sessionId)}/drip-sequences`),
+  getSequence: (sessionId: string, id: string) =>
+    request<DripSequenceItem>(`/sessions/${encodeURIComponent(sessionId)}/drip-sequences/${encodeURIComponent(id)}`),
+  createSequence: (
+    sessionId: string,
+    data: {
+      name: string;
+      description?: string;
+      triggerTag: string;
+      enabled?: boolean;
+      steps: Array<{ stepOrder: number; delayHours: number; templateMessage: string }>;
+    },
+  ) =>
+    request<DripSequenceItem>(`/sessions/${encodeURIComponent(sessionId)}/drip-sequences`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSequence: (
+    sessionId: string,
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      triggerTag?: string;
+      enabled?: boolean;
+      steps?: Array<{ id?: string; stepOrder: number; delayHours: number; templateMessage: string }>;
+    },
+  ) =>
+    request<DripSequenceItem>(`/sessions/${encodeURIComponent(sessionId)}/drip-sequences/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteSequence: (sessionId: string, id: string) =>
+    request<{ success: boolean }>(`/sessions/${encodeURIComponent(sessionId)}/drip-sequences/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  getSubscribers: (sessionId: string, sequenceId: string) =>
+    request<DripSubscriberItem[]>(
+      `/sessions/${encodeURIComponent(sessionId)}/drip-sequences/${encodeURIComponent(sequenceId)}/subscribers`,
+    ),
+  enrollSubscriber: (
+    sessionId: string,
+    sequenceId: string,
+    data: { phone: string; contactName?: string },
+  ) =>
+    request<DripSubscriberItem>(
+      `/sessions/${encodeURIComponent(sessionId)}/drip-sequences/${encodeURIComponent(sequenceId)}/enroll`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    ),
+};
+
 

@@ -125,16 +125,26 @@ export function Sessions() {
     dismissQrForSession,
   } = useSessionPairing({ sessions, sessionsRef, reloadSessions: fetchSessions });
 
-  const { showCreateModal, setShowCreateModal, newSessionName, setNewSessionName, creating, handleCreate } =
-    useSessionCreateForm({
-      onCreated: newSession => {
-        // Functional append: never capture a stale `sessions` (a WS or fetch between the await and the
-        // setState would otherwise drop a row). Then invalidate the prefix so stats/groups/chats refresh.
-        setSessions(current => [...current, newSession]);
-        void invalidateSessionQueries(queryClient, queryKeys.sessions);
-      },
-      onFailed: msg => setError(msg),
-    });
+  const {
+    showCreateModal,
+    setShowCreateModal,
+    newSessionName,
+    setNewSessionName,
+    engineType,
+    setEngineType,
+    metaConfig,
+    setMetaConfig,
+    creating,
+    handleCreate,
+  } = useSessionCreateForm({
+    onCreated: newSession => {
+      // Functional append: never capture a stale `sessions` (a WS or fetch between the await and the
+      // setState would otherwise drop a row). Then invalidate the prefix so stats/groups/chats refresh.
+      setSessions(current => [...current, newSession]);
+      void invalidateSessionQueries(queryClient, queryKeys.sessions);
+    },
+    onFailed: msg => setError(msg),
+  });
 
   // Reconcile the LOCAL view with an authoritative Session response. The previous handlers discarded
   // the response and fabricated `{ status: 'disconnected' }`, losing phone:null, timestamps, and other
@@ -459,13 +469,59 @@ export function Sessions() {
               <button
                 className="btn-primary"
                 onClick={handleCreate}
-                disabled={creating || !canCreateSession(newSessionName, existingSessionNames)}
+                disabled={
+                  creating ||
+                  !canCreateSession(newSessionName, existingSessionNames) ||
+                  (engineType === 'meta-cloud-api' && (!metaConfig.phoneNumberId.trim() || !metaConfig.accessToken.trim()))
+                }
               >
                 {creating ? <Loader2 className="animate-spin" size={16} /> : t('common.create')}
               </button>
             </>
           }
         >
+          <div className="engine-type-selector" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+            <div
+              className={`engine-option-card ${engineType === 'portal' ? 'active' : ''}`}
+              onClick={() => setEngineType('portal')}
+              style={{
+                border: engineType === 'portal' ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.1)',
+                background: engineType === 'portal' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
+                padding: '14px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{ fontWeight: 600, color: engineType === 'portal' ? '#22c55e' : '#fff', marginBottom: '4px' }}>
+                📱 Portal Engine (QR)
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                Scan QR code with WhatsApp on your phone.
+              </div>
+            </div>
+
+            <div
+              className={`engine-option-card ${engineType === 'meta-cloud-api' ? 'active' : ''}`}
+              onClick={() => setEngineType('meta-cloud-api')}
+              style={{
+                border: engineType === 'meta-cloud-api' ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
+                background: engineType === 'meta-cloud-api' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.03)',
+                padding: '14px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{ fontWeight: 600, color: engineType === 'meta-cloud-api' ? '#60a5fa' : '#fff', marginBottom: '4px' }}>
+                ⚡ Meta Official API
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                Meta Business Platform (Cloud API). Direct token.
+              </div>
+            </div>
+          </div>
+
           <label htmlFor="sess-1">{t('sessions.create.label')}</label>
           <input
             id="sess-1"
@@ -486,6 +542,74 @@ export function Sessions() {
             <p className="input-error">{t('sessions.create.tooLong', { length: newSessionName.length })}</p>
           )}
           {nameIssues.includes('duplicate') && <p className="input-error">{t('sessions.create.duplicate')}</p>}
+
+          {engineType === 'meta-cloud-api' && (
+            <div className="meta-config-fields" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '16px' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#60a5fa' }}>Meta API Credentials</span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px' }}>
+                  Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 106540123456789"
+                  value={metaConfig.phoneNumberId}
+                  onChange={e => setMetaConfig(c => ({ ...c, phoneNumberId: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px' }}>
+                  Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="EAAG..."
+                  value={metaConfig.accessToken}
+                  onChange={e => setMetaConfig(c => ({ ...c, accessToken: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px' }}>
+                  WhatsApp Business Account (WABA) ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 109876543210987"
+                  value={metaConfig.wabaId}
+                  onChange={e => setMetaConfig(c => ({ ...c, wabaId: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px' }}>
+                  Display Phone Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="+15551234567"
+                  value={metaConfig.displayPhoneNumber}
+                  onChange={e => setMetaConfig(c => ({ ...c, displayPhoneNumber: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px' }}>
+                  Business Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="My Company"
+                  value={metaConfig.businessName}
+                  onChange={e => setMetaConfig(c => ({ ...c, businessName: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
         </Modal>
       )}
 
@@ -797,7 +921,18 @@ export function Sessions() {
           filteredSessions.map(session => (
             <div key={session.id} className="session-card">
               <div className="card-header">
-                <h3 title={session.name}>{session.name}</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h3 title={session.name}>{session.name}</h3>
+                  {session.pushName?.includes('Meta') ? (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 600 }}>
+                      META API
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontWeight: 600 }}>
+                      PORTAL
+                    </span>
+                  )}
+                </div>
                 <span className={`status-pill ${session.status}`}>{formatStatus(session.status)}</span>
               </div>
 

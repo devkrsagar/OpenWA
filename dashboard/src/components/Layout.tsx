@@ -22,6 +22,11 @@ import {
   ChevronRight,
   Users as UsersIcon,
   CreditCard,
+  BarChart3,
+  Zap,
+  Bot,
+  ShoppingCart,
+  Clock,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { type UserRole } from '../hooks/useRole';
@@ -39,6 +44,12 @@ const allNavItems = [
   { to: '/chats', icon: MessageSquare, key: 'chats' as const, adminOnly: false },
   { to: '/webhooks', icon: Webhook, key: 'webhooks' as const, adminOnly: false },
   { to: '/templates', icon: ClipboardList, key: 'templates' as const, adminOnly: false },
+  { to: '/contacts', icon: UsersIcon, key: 'contacts' as const, defaultLabel: 'Contacts', adminOnly: false },
+  { to: '/campaigns', icon: BarChart3, key: 'campaigns' as const, defaultLabel: 'Campaigns', adminOnly: false },
+  { to: '/automation', icon: Zap, key: 'automation' as const, defaultLabel: 'Automation', adminOnly: false },
+  { to: '/ai-bot', icon: Bot, key: 'aiBot' as const, defaultLabel: 'AI Chatbot', adminOnly: false },
+  { to: '/ecommerce', icon: ShoppingCart, key: 'ecommerce' as const, defaultLabel: 'E-Commerce', adminOnly: false },
+  { to: '/drip-sequences', icon: Clock, key: 'dripSequences' as const, defaultLabel: 'Drip & Schedule', adminOnly: false },
   { to: '/users', icon: UsersIcon, key: 'users' as const, defaultLabel: 'Users', adminOnly: true },
   { to: '/subscription', icon: CreditCard, key: 'subscription' as const, defaultLabel: 'Subscription', adminOnly: false },
   { to: '/api-keys', icon: Key, key: 'apiKeys' as const, defaultLabel: 'API Keys', adminOnly: false },

@@ -816,4 +816,209 @@ export class BulkMessageService implements OnApplicationBootstrap {
     }
     return delay;
   }
+
+  async listCampaigns(query: {
+    sessionId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: any[]; total: number }> {
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const offset = Math.max(Number(query.offset) || 0, 0);
+
+    const qb = this.batchRepository.createQueryBuilder('b');
+
+    if (query.sessionId) {
+      qb.andWhere('b.sessionId = :sessionId', { sessionId: query.sessionId });
+    }
+
+    if (query.status && query.status !== 'ALL') {
+      qb.andWhere('b.status = :status', { status: query.status.toLowerCase() });
+    }
+
+    qb.orderBy('b.createdAt', 'DESC');
+
+    const [items, total] = await qb.skip(offset).take(limit).getManyAndCount();
+
+    const formatted = items.map(b => {
+      const totalCount = b.progress?.total || b.messages?.length || 0;
+      const sentCount = b.progress?.sent || 0;
+      const failedCount = b.progress?.failed || 0;
+      const pendingCount =
+        b.progress?.pending ||
+        (b.status === BatchStatus.PROCESSING ? Math.max(totalCount - sentCount - failedCount, 0) : 0);
+      const deliveryRate = totalCount > 0 ? Math.round((sentCount / totalCount) * 100) : 0;
+
+      return {
+        id: b.id,
+        batchId: b.batchId,
+        sessionId: b.sessionId,
+        status: b.status,
+        totalRecipients: totalCount,
+        sentCount,
+        failedCount,
+        pendingCount,
+        deliveryRate,
+        options: b.options,
+        startedAt: b.startedAt,
+        completedAt: b.completedAt,
+        createdAt: b.createdAt,
+      };
+    });
+
+    return { items: formatted, total };
+  }
+
+  async getCampaignAnalyticsOverview(sessionId?: string): Promise<{
+    totalCampaigns: number;
+    totalRecipients: number;
+    totalSent: number;
+    totalFailed: number;
+    totalPending: number;
+    overallDeliveryRate: number;
+    activeCampaigns: number;
+    statusDistribution: Record<string, number>;
+    dailyActivity: Array<{ date: string; sent: number; failed: number; total: number }>;
+  }> {
+    const qb = this.batchRepository.createQueryBuilder('b');
+    if (sessionId) {
+      qb.andWhere('b.sessionId = :sessionId', { sessionId });
+    }
+
+    const allBatches = await qb.orderBy('b.createdAt', 'DESC').getMany();
+
+    let totalRecipients = 0;
+    let totalSent = 0;
+    let totalFailed = 0;
+    let totalPending = 0;
+    let activeCampaigns = 0;
+    const statusDistribution: Record<string, number> = {
+      completed: 0,
+      processing: 0,
+      pending: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+
+    const dailyMap = new Map<string, { sent: number; failed: number; total: number }>();
+
+    for (const b of allBatches) {
+      const tot = b.progress?.total || b.messages?.length || 0;
+      const sent = b.progress?.sent || 0;
+      const failed = b.progress?.failed || 0;
+      const pending =
+        b.progress?.pending ||
+        (b.status === BatchStatus.PROCESSING ? Math.max(tot - sent - failed, 0) : 0);
+
+      totalRecipients += tot;
+      totalSent += sent;
+      totalFailed += failed;
+      totalPending += pending;
+
+      if (b.status === BatchStatus.PROCESSING || b.status === BatchStatus.PENDING) {
+        activeCampaigns++;
+      }
+
+      const st = (b.status || 'unknown').toLowerCase();
+      statusDistribution[st] = (statusDistribution[st] || 0) + 1;
+
+      // Group by date (YYYY-MM-DD)
+      const d = b.createdAt ? new Date(b.createdAt).toISOString().split('T')[0] : 'Unknown';
+      const currentDay = dailyMap.get(d) || { sent: 0, failed: 0, total: 0 };
+      currentDay.sent += sent;
+      currentDay.failed += failed;
+      currentDay.total += tot;
+      dailyMap.set(d, currentDay);
+    }
+
+    const overallTotal = totalSent + totalFailed;
+    const overallDeliveryRate = overallTotal > 0 ? Math.round((totalSent / overallTotal) * 100) : 100;
+
+    const dailyActivity = Array.from(dailyMap.entries())
+      .map(([date, stats]) => ({ date, ...stats }))
+      .slice(0, 7)
+      .reverse();
+
+    return {
+      totalCampaigns: allBatches.length,
+      totalRecipients,
+      totalSent,
+      totalFailed,
+      totalPending,
+      overallDeliveryRate,
+      activeCampaigns,
+      statusDistribution,
+      dailyActivity,
+    };
+  }
+
+  async getCampaignDetails(id: string): Promise<any> {
+    const batch = await this.batchRepository.findOne({
+      where: [{ id }, { batchId: id }],
+    });
+
+    if (!batch) {
+      throw new NotFoundException(`Campaign with ID '${id}' not found`);
+    }
+
+    const totalCount = batch.progress?.total || batch.messages?.length || 0;
+    const sentCount = batch.progress?.sent || 0;
+    const failedCount = batch.progress?.failed || 0;
+    const pendingCount = batch.progress?.pending || 0;
+    const deliveryRate = totalCount > 0 ? Math.round((sentCount / totalCount) * 100) : 0;
+
+    const resultMap = new Map<string, BatchMessageResult>();
+    if (batch.results) {
+      for (const res of batch.results) {
+        if (res.chatId) resultMap.set(res.chatId, res);
+      }
+    }
+
+    const recipientLogs = (batch.messages || []).map((msg, index) => {
+      const res = resultMap.get(msg.chatId);
+      return {
+        index: index + 1,
+        chatId: msg.chatId,
+        phone: msg.chatId.replace(/@.*$/, ''),
+        type: msg.type,
+        variables: msg.variables,
+        status: res?.status || (batch.status === BatchStatus.COMPLETED ? 'sent' : 'pending'),
+        messageId: res?.messageId,
+        error: res?.error?.message || null,
+        sentAt: res?.sentAt || null,
+      };
+    });
+
+    return {
+      id: batch.id,
+      batchId: batch.batchId,
+      sessionId: batch.sessionId,
+      status: batch.status,
+      totalRecipients: totalCount,
+      sentCount,
+      failedCount,
+      pendingCount,
+      deliveryRate,
+      options: batch.options,
+      startedAt: batch.startedAt,
+      completedAt: batch.completedAt,
+      createdAt: batch.createdAt,
+      recipients: recipientLogs,
+    };
+  }
+
+  async exportCampaignCsv(id: string): Promise<string> {
+    const details = await this.getCampaignDetails(id);
+    const headers = ['Recipient Phone', 'Chat ID', 'Status', 'Message ID', 'Sent At', 'Error Details'];
+    const rows = details.recipients.map((r: any) => [
+      `"${r.phone}"`,
+      `"${r.chatId}"`,
+      `"${r.status}"`,
+      `"${r.messageId || ''}"`,
+      `"${r.sentAt ? new Date(r.sentAt).toISOString() : ''}"`,
+      `"${(r.error || '').replace(/"/g, '""')}"`,
+    ]);
+
+    return [headers.join(','), ...rows.map((row: string[]) => row.join(','))].join('\n');
+  }
 }
