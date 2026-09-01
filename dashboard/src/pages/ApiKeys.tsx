@@ -33,6 +33,7 @@ import {
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { useToast } from '../hooks/useToast';
+import { useRole } from '../hooks/useRole';
 import { copyToClipboard } from '../utils/clipboard';
 import './ApiKeys.css';
 
@@ -58,6 +59,8 @@ const columnHelper = createColumnHelper<typeof features, ApiKey>();
 export function ApiKeys() {
   const { t } = useTranslation();
   const toast = useToast();
+  const { role } = useRole();
+  const isAdmin = role === 'admin';
   useDocumentTitle(t('apiKeys.title'));
   const { data: apiKeys = [], isLoading: loading, isError: apiKeysError } = useApiKeysQuery();
   const createMutation = useCreateApiKeyMutation();
@@ -146,15 +149,26 @@ export function ApiKeys() {
           header: () => t('apiKeys.columns.key'),
           cell: info => {
             const apiKey = info.row.original;
+            const isVisible = visibleKeys.has(apiKey.id);
+            const isCopied = copied === apiKey.id;
             return (
               <span className="key-cell">
-                <code>{visibleKeys.has(apiKey.id) ? apiKey.keyPrefix + '...' : apiKey.keyPrefix + '****'}</code>
+                <code>{isVisible ? apiKey.keyPrefix + '••••••••••••••••••••••••' : apiKey.keyPrefix + '••••'}</code>
                 <button
                   className="icon-btn-sm"
                   onClick={() => toggleKeyVisibility(apiKey.id)}
-                  aria-label={visibleKeys.has(apiKey.id) ? t('common.hideApiKey') : t('common.showApiKey')}
+                  title={isVisible ? 'Mask key' : 'Show prefix'}
+                  aria-label={isVisible ? t('common.hideApiKey') : t('common.showApiKey')}
                 >
-                  {visibleKeys.has(apiKey.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button
+                  className="icon-btn-sm"
+                  onClick={() => void handleCopy(apiKey.keyPrefix, apiKey.id)}
+                  title="Copy prefix"
+                  aria-label="Copy key prefix"
+                >
+                  {isCopied ? <Check size={14} color="#22c55e" /> : <Copy size={14} />}
                 </button>
               </span>
             );
@@ -280,22 +294,33 @@ export function ApiKeys() {
           }
         >
           {createdKey ? (
-            <div>
-              <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>{t('apiKeys.createdHint')}</p>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div className="created-key-modal-body">
+              <div className="security-notice-box" style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '16px', color: '#eab308', fontSize: '0.85rem' }}>
+                ⚠️ <strong>Copy your API key now.</strong> For security reasons, the full secret key cannot be shown again after closing this dialog.
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px' }}>
                 <code
                   style={{
                     flex: 1,
-                    padding: '0.75rem',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: '6px',
+                    padding: '12px 14px',
+                    background: 'var(--bg-secondary, #0f172a)',
+                    color: '#22c55e',
+                    border: '1px solid var(--border, #334155)',
+                    borderRadius: '8px',
                     wordBreak: 'break-all',
+                    fontSize: '0.9rem',
+                    fontFamily: 'monospace',
                   }}
                 >
                   {createdKey}
                 </code>
-                <button className="btn-primary" onClick={() => void handleCopy(createdKey, 'modal')}>
+                <button
+                  className="btn-primary"
+                  style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+                  onClick={() => void handleCopy(createdKey, 'modal')}
+                >
                   {copied === 'modal' ? <Check size={16} /> : <Copy size={16} />}
+                  {copied === 'modal' ? 'Copied!' : 'Copy Key'}
                 </button>
               </div>
             </div>
@@ -309,14 +334,18 @@ export function ApiKeys() {
                 value={newKey.name}
                 onChange={e => setNewKey({ ...newKey, name: e.target.value })}
               />
-              <label htmlFor="ak-2">{t('common.role')}</label>
-              <select id="ak-2" value={newKey.role} onChange={e => setNewKey({ ...newKey, role: e.target.value })}>
-                {roleNames.map(r => (
-                  <option key={r} value={r}>
-                    {t(`apiKeys.roles.${r}`)}
-                  </option>
-                ))}
-              </select>
+              {isAdmin && (
+                <>
+                  <label htmlFor="ak-2">{t('common.role')}</label>
+                  <select id="ak-2" value={newKey.role} onChange={e => setNewKey({ ...newKey, role: e.target.value })}>
+                    {roleNames.map(r => (
+                      <option key={r} value={r}>
+                        {t(`apiKeys.roles.${r}`)}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </>
           )}
         </Modal>
@@ -356,17 +385,19 @@ export function ApiKeys() {
           )}
         </div>
 
-        <div className="permissions-reference">
-          <h3>{t('apiKeys.rolesTitle')}</h3>
-          <div className="permissions-list">
-            {roleNames.map(r => (
-              <div key={r} className="perm-item">
-                <code>{r}</code>
-                <span>{t(`apiKeys.roleDescriptions.${r}`)}</span>
-              </div>
-            ))}
+        {isAdmin && (
+          <div className="permissions-reference">
+            <h3>{t('apiKeys.rolesTitle')}</h3>
+            <div className="permissions-list">
+              {roleNames.map(r => (
+                <div key={r} className="perm-item">
+                  <code>{r}</code>
+                  <span>{t(`apiKeys.roleDescriptions.${r}`)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {confirmAction && (

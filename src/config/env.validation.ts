@@ -167,6 +167,7 @@ export function validateEnv(config: EnvConfig): EnvConfig {
   checkPort('PORT');
   checkPort('DATABASE_PORT');
   checkPort('REDIS_PORT');
+  checkPort('SMTP_PORT');
 
   // Other numeric knobs: a non-integer (e.g. `RATE_LIMIT_SHORT_LIMIT=abc`) parses to NaN downstream,
   // which silently disables the corresponding limit/timeout. Reject at boot instead of coercing.

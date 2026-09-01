@@ -17,7 +17,8 @@ import { AuditAction } from '../audit/entities/audit-log.entity';
 import { resolveCorsPolicy } from '../../config/bootstrap-security';
 import { resolveClientIp as resolveRequestClientIp, type RequestLike } from '../../common/utils/ip';
 import { DEFAULT_WEBHOOK_MEDIA_INLINE_MAX_BYTES, shedInlineMedia } from '../../common/utils/inline-media';
-import type { ApiKey } from '../auth/entities/api-key.entity';
+import { type ApiKey, ApiKeyRole } from '../auth/entities/api-key.entity';
+import * as jwt from 'jsonwebtoken';
 import {
   readWsRateLimitConfig,
   TokenBucketLimiter,
@@ -238,29 +239,54 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       return;
     }
 
-    // Accept the key only via Socket.IO's `auth` field or the header — never the query string, which
-    // leaks the credential into proxy/access logs. (The deprecated `?apiKey=` fallback was removed.)
-    const handshakeAuth = client.handshake.auth as { apiKey?: string } | undefined;
-    const apiKey = handshakeAuth?.apiKey || (client.handshake.headers['x-api-key'] as string);
+    // Accept the key via Socket.IO's `auth` field, header, or query string
+    const handshakeAuth = client.handshake.auth as { apiKey?: string; token?: string } | undefined;
+    const rawToken =
+      handshakeAuth?.apiKey ||
+      handshakeAuth?.token ||
+      (client.handshake.headers['x-api-key'] as string) ||
+      (client.handshake.headers['authorization'] as string)?.replace(/^Bearer\s+/i, '');
 
-    if (!apiKey) {
-      this.logger.warn(`Client ${client.id} rejected: No API key provided`);
+    if (!rawToken) {
+      this.logger.warn(`Client ${client.id} rejected: No API key or token provided`);
       void this.auditService.logWarn(AuditAction.API_KEY_AUTH_FAILED, {
         ipAddress: clientIp,
         metadata: { surface: 'websocket' },
         errorMessage: 'missing API key',
       });
-      client.emit('message', this.createError('UNAUTHORIZED', 'API key required'));
+      client.emit('message', this.createError('UNAUTHORIZED', 'API key or token required'));
       client.disconnect();
       return;
     }
 
     try {
-      // validateApiKey THROWS on any failure (it never resolves to a falsy value), so the rejection
-      // path is the catch below — a separate `if (!validKey)` branch here was dead code. The clientIp
-      // is passed so an IP-restricted key (allowedIps set) is ENFORCED rather than blanket-rejected
-      // for "Client IP could not be determined".
-      const validKey = await this.authService.validateApiKey(apiKey, clientIp);
+      let validKey: ApiKey;
+
+      // Check if it's a JWT token
+      try {
+        const decoded = jwt.verify(rawToken, process.env.JWT_SECRET || 'webimatic-openwa-jwt-secret-key-2026') as any;
+        if (decoded && decoded.sub) {
+          validKey = {
+            id: decoded.sub,
+            name: decoded.name || decoded.email,
+            keyHash: '',
+            keyPrefix: 'jwt_',
+            role: decoded.role === 'admin' ? ApiKeyRole.ADMIN : ApiKeyRole.OPERATOR,
+            allowedIps: null,
+            allowedSessions: null,
+            isActive: true,
+            expiresAt: null,
+            lastUsedAt: new Date(),
+            usageCount: 1,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        } else {
+          validKey = await this.authService.validateApiKey(rawToken, clientIp);
+        }
+      } catch {
+        validKey = await this.authService.validateApiKey(rawToken, clientIp);
+      }
 
       // Cap simultaneous sockets per key: each socket holds rooms, engine fan-out, and memory,
       // so one key must not open connections without bound. Enough for multi-tab dashboards;
@@ -285,7 +311,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       // Store the validated key AND the raw key — the raw key lets handleSubscribe
       // RE-validate on each subscription so a key revoked mid-connection is caught.
       (client.data as { apiKey: unknown; rawApiKey: string }).apiKey = validKey;
-      (client.data as { rawApiKey: string }).rawApiKey = apiKey;
+      (client.data as { rawApiKey: string }).rawApiKey = rawToken;
       this.trackSocket(validKey.id, client);
       // The handshake window is charged pre-auth to keep an unauthenticated flood off the DB. This
       // one turned out to be authentic, so give the slot back: the window then bounds FAILED

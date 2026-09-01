@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, UpdateQueryBuilder, DeleteQueryBuilder, type QueryDeepPartialEntity } from 'typeorm';
+import { Repository, UpdateQueryBuilder, DeleteQueryBuilder, IsNull, type QueryDeepPartialEntity } from 'typeorm';
 import { randomBytes } from 'crypto';
 import { ipMatches } from '../../common/utils/ip';
 import { hashApiKey } from './api-key-hash';
@@ -171,7 +171,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return this.apiKeyRepository.save(apiKey);
   }
 
-  async createApiKey(dto: CreateApiKeyDto): Promise<{ apiKey: ApiKey; rawKey: string }> {
+  async createApiKey(dto: CreateApiKeyDto, userId?: string | null): Promise<{ apiKey: ApiKey; rawKey: string }> {
     // Generate secure random key: owa_k1_<32 bytes hex>
     const rawKey = `owa_k1_${randomBytes(32).toString('hex')}`;
     const keyHash = this.hashKey(rawKey);
@@ -182,6 +182,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       keyHash,
       keyPrefix,
       role: dto.role || ApiKeyRole.OPERATOR,
+      userId: userId || null,
       allowedIps: dto.allowedIps || null,
       allowedSessions: dto.allowedSessions || null,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
@@ -190,6 +191,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const saved = await this.apiKeyRepository.save(apiKey);
     this.logger.log(`API key created: ${saved.name}`, {
       keyId: saved.id,
+      userId: saved.userId,
       role: saved.role,
       action: 'api_key_created',
     });
@@ -197,22 +199,47 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return { apiKey: saved, rawKey };
   }
 
-  async findAll(): Promise<ApiKey[]> {
-    return this.apiKeyRepository.find({
-      order: { createdAt: 'DESC' },
-    });
+  async findAll(userId?: string | null, userRole?: string | null, targetUserId?: string | null): Promise<ApiKey[]> {
+    if (userRole === 'admin') {
+      if (targetUserId === 'all') {
+        return this.apiKeyRepository.find({
+          order: { createdAt: 'DESC' },
+        });
+      }
+      if (targetUserId) {
+        return this.apiKeyRepository.find({
+          where: { userId: targetUserId },
+          order: { createdAt: 'DESC' },
+        });
+      }
+      const adminConditions = userId ? [{ userId: IsNull() }, { userId }] : [{ userId: IsNull() }];
+      return this.apiKeyRepository.find({
+        where: adminConditions,
+        order: { createdAt: 'DESC' },
+      });
+    }
+    if (userId) {
+      return this.apiKeyRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      });
+    }
+    return [];
   }
 
-  async findOne(id: string): Promise<ApiKey> {
+  async findOne(id: string, userId?: string | null, userRole?: string | null): Promise<ApiKey> {
     const apiKey = await this.apiKeyRepository.findOne({ where: { id } });
     if (!apiKey) {
+      throw new NotFoundException(`API key with id '${id}' not found`);
+    }
+    if (userRole !== 'admin' && userId && apiKey.userId !== userId) {
       throw new NotFoundException(`API key with id '${id}' not found`);
     }
     return apiKey;
   }
 
-  async update(id: string, dto: UpdateApiKeyDto): Promise<ApiKey> {
-    const apiKey = await this.findOne(id);
+  async update(id: string, dto: UpdateApiKeyDto, userId?: string | null, userRole?: string | null): Promise<ApiKey> {
+    const apiKey = await this.findOne(id, userId, userRole);
 
     // Scoping the last unscoped admin (non-empty allowedSessions) strips key-management just as
     // surely as demoting or expiring it: @RequireUnscopedKey would then 403 every lifecycle route.
@@ -251,11 +278,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       ).execute();
       await this.assertMutationApplied(id, result.affected);
       // The row's post-write state, for the eviction comparison below.
-      saved = await this.findOne(id);
+      saved = await this.findOne(id, userId, userRole);
     } else {
       await this.applyUnguardedUpdate(patch, id);
       // The row's post-write state, for the eviction comparison below.
-      saved = await this.findOne(id);
+      saved = await this.findOne(id, userId, userRole);
     }
 
     // Compare membership, not order: a pure reorder of allowedIps/allowedSessions is a no-op for the
@@ -272,8 +299,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return saved;
   }
 
-  async delete(id: string): Promise<void> {
-    const apiKey = await this.findOne(id);
+  async delete(id: string, userId?: string | null, userRole?: string | null): Promise<void> {
+    const apiKey = await this.findOne(id, userId, userRole);
     if (apiKey.role === ApiKeyRole.ADMIN) {
       const result = await this.withLastAdminGuard(
         this.apiKeyRepository.createQueryBuilder().delete().from(ApiKey),
@@ -294,8 +321,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async revoke(id: string): Promise<ApiKey> {
-    const apiKey = await this.findOne(id);
+  async revoke(id: string, userId?: string | null, userRole?: string | null): Promise<ApiKey> {
+    const apiKey = await this.findOne(id, userId, userRole);
     let saved: ApiKey;
     if (apiKey.role === ApiKeyRole.ADMIN) {
       const result = await this.withLastAdminGuard(
@@ -303,11 +330,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         id,
       ).execute();
       await this.assertMutationApplied(id, result.affected);
-      saved = await this.findOne(id);
+      saved = await this.findOne(id, userId, userRole);
     } else {
       // A non-admin target cannot strand the system — no guard needed.
       await this.applyUnguardedUpdate({ isActive: false }, id);
-      saved = await this.findOne(id);
+      saved = await this.findOne(id, userId, userRole);
     }
     // A revoked key fails validation before its next flush, so its accumulator would orphan —
     // drop it here.

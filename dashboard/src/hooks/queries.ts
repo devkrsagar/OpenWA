@@ -42,7 +42,7 @@ export const queryKeys = {
 export function useSessionsQuery() {
   return useQuery({
     queryKey: queryKeys.sessions,
-    queryFn: sessionApi.list,
+    queryFn: () => sessionApi.list(),
     staleTime: 30_000,
   });
 }
@@ -177,7 +177,7 @@ export function useDeleteTemplateMutation() {
 export function useApiKeysQuery() {
   return useQuery({
     queryKey: queryKeys.apiKeys,
-    queryFn: apiKeyApi.list,
+    queryFn: () => apiKeyApi.list(),
     staleTime: 30_000,
   });
 }

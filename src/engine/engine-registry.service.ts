@@ -20,37 +20,38 @@ import type { IWhatsAppEngine } from './interfaces/whatsapp-engine.interface';
 export class EngineRegistry {
   /** Live engines by session (DB) id. Presence here means "started"; identity means "not superseded". */
   private readonly engines = new Map<string, IWhatsAppEngine>();
+  private readonly aliases = new Map<string, string>();
 
-  /**
-   * Sessions whose engine is being constructed but is not in `engines` yet. Held so concurrency
-   * accounting and the infra import pre-flight can see a session that is starting but not yet
-   * registered, which would otherwise look idle and be orphaned or double-started.
-   *
-   * Exposed directly (rather than behind add/remove wrappers) because the lifecycle owner needs the
-   * full Set surface — including `clear()` — and this is a reservation ledger, not an invariant that
-   * benefits from being funnelled through methods the way engine identity is.
-   */
   readonly initializing = new Set<string>();
 
   // ── Map-compatible surface (used by the lifecycle owner) ──────────────
 
-  get(id: string): IWhatsAppEngine | undefined {
-    return this.engines.get(id);
+  get(idOrAlias: string): IWhatsAppEngine | undefined {
+    return this.engines.get(idOrAlias) || (this.aliases.has(idOrAlias) ? this.engines.get(this.aliases.get(idOrAlias)!) : undefined);
   }
 
-  set(id: string, engine: IWhatsAppEngine): void {
+  set(id: string, engine: IWhatsAppEngine, alias?: string): void {
     this.engines.set(id, engine);
+    if (alias) {
+      this.aliases.set(alias, id);
+    }
   }
 
-  has(id: string): boolean {
-    return this.engines.has(id);
+  has(idOrAlias: string): boolean {
+    return this.engines.has(idOrAlias) || (this.aliases.has(idOrAlias) && this.engines.has(this.aliases.get(idOrAlias)!));
   }
 
   delete(id: string): boolean {
+    for (const [alias, targetId] of this.aliases.entries()) {
+      if (targetId === id || alias === id) {
+        this.aliases.delete(alias);
+      }
+    }
     return this.engines.delete(id);
   }
 
   clear(): void {
+    this.aliases.clear();
     this.engines.clear();
   }
 

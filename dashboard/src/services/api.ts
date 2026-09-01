@@ -697,7 +697,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const isFormData = options.body instanceof FormData;
   const headers: HeadersInit = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+    ...(apiKey
+      ? {
+          'X-API-Key': apiKey,
+          Authorization: `Bearer ${apiKey}`,
+        }
+      : {}),
     ...options.headers,
   };
 
@@ -718,7 +723,14 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 async function requestText(endpoint: string): Promise<string> {
   const apiKey = sessionStorage.getItem('openwa_api_key');
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: { ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
+    headers: {
+      ...(apiKey
+        ? {
+            'X-API-Key': apiKey,
+            Authorization: `Bearer ${apiKey}`,
+          }
+        : {}),
+    },
   });
 
   if (!response.ok) {
@@ -753,7 +765,8 @@ async function requestBlob(endpoint: string): Promise<Blob> {
 // =============================================================================
 
 export const sessionApi = {
-  list: () => request<Session[]>('/sessions'),
+  list: (params?: { userId?: string }) =>
+    request<Session[]>(`/sessions${params?.userId ? `?userId=${encodeURIComponent(params.userId)}` : ''}`),
   get: (id: string) => request<Session>(`/sessions/${id}`),
   create: (name: string) =>
     request<Session>('/sessions', {
@@ -928,7 +941,8 @@ export const contactApi = {
 // =============================================================================
 
 export const apiKeyApi = {
-  list: () => request<ApiKey[]>('/auth/api-keys'),
+  list: (params?: { userId?: string }) =>
+    request<ApiKey[]>(`/auth/api-keys${params?.userId ? `?userId=${encodeURIComponent(params.userId)}` : ''}`),
   create: (data: {
     name: string;
     role: string;
@@ -1353,3 +1367,208 @@ export const statsApi = {
   getOverview: () => request<OverviewStats>('/stats/overview'),
   getMessages: (period: StatsPeriod) => request<MessageStats>(`/stats/messages?period=${period}`),
 };
+
+// =============================================================================
+// User Auth & Subscription API
+// =============================================================================
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+  status: 'active' | 'suspended';
+  isEmailVerified?: boolean;
+  subscription?: {
+    id: string;
+    planId: string;
+    billingCycle: 'monthly' | 'yearly';
+    status: string;
+    startDate?: string;
+    endDate?: string;
+    plan?: Plan;
+  };
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  description?: string;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  maxSessions: number;
+  maxMessagesPerMonth: number;
+  features?: string[];
+  isActive: boolean;
+}
+
+export const userAuthApi = {
+  signup: (body: { name: string; email: string; password: string }) =>
+    request<{ message: string; email: string }>('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  verifyOtp: (body: { email: string; otpCode: string; type?: string }) =>
+    request<{ token: string; user: UserProfile }>('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  resendOtp: (body: { email: string; type?: string }) =>
+    request<{ message: string }>('/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  login: (body: { email: string; password: string }) =>
+    request<{ token?: string; requiresVerification?: boolean; email?: string; message?: string; user?: UserProfile }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  forgotPassword: (body: { email: string }) =>
+    request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  resetPassword: (body: { email: string; otpCode: string; newPassword: string }) =>
+    request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getMe: () => request<UserProfile>('/auth/me'),
+};
+
+export interface UserOverview {
+  user: UserProfile;
+  apiKeys: {
+    id: string;
+    name: string;
+    keyPrefix: string;
+    role: string;
+    isActive: boolean;
+    usageCount: number;
+    lastUsedAt?: string | null;
+    createdAt: string;
+  }[];
+  sessions: {
+    id: string;
+    name: string;
+    status: string;
+    phone?: string | null;
+    pushName?: string | null;
+    connectedAt?: string | null;
+    lastActive?: string | null;
+    createdAt: string;
+    engineLoaded: boolean;
+  }[];
+}
+
+export const adminUsersApi = {
+  list: () => request<UserProfile[]>('/admin/users'),
+  getOverview: (id: string) => request<UserOverview>(`/admin/users/${id}/overview`),
+  updateStatus: (id: string, status: 'active' | 'suspended') =>
+    request<UserProfile>(`/admin/users/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  updatePlan: (id: string, planId: string, billingCycle?: 'monthly' | 'yearly') =>
+    request<any>(`/admin/users/${id}/plan`, {
+      method: 'PUT',
+      body: JSON.stringify({ planId, billingCycle }),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/admin/users/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+export interface GatewayConfig {
+  razorpayActive: boolean;
+  keyId: string | null;
+}
+
+export interface SubscriptionRequest {
+  id: string;
+  userId: string;
+  user?: UserProfile;
+  planId: string;
+  plan?: Plan;
+  billingCycle: 'monthly' | 'yearly';
+  amount: number;
+  paymentMethod: 'razorpay' | 'manual';
+  razorpayOrderId?: string | null;
+  razorpayPaymentId?: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  adminNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const billingApi = {
+  getPlans: () => request<Plan[]>('/billing/plans'),
+  getGatewayConfig: () => request<GatewayConfig>('/billing/config'),
+  getMySubscription: () => request<any>('/billing/my-subscription'),
+  getMyRequests: () => request<SubscriptionRequest[]>('/billing/my-requests'),
+  subscribe: (planId: string, billingCycle: 'monthly' | 'yearly' = 'monthly') =>
+    request<any>('/billing/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ planId, billingCycle }),
+    }),
+  createRazorpayOrder: (planId: string, billingCycle: 'monthly' | 'yearly' = 'monthly') =>
+    request<{
+      orderId: string;
+      amount: number;
+      currency: string;
+      keyId: string;
+      planName: string;
+    }>('/billing/razorpay/create-order', {
+      method: 'POST',
+      body: JSON.stringify({ planId, billingCycle }),
+    }),
+  verifyRazorpayPayment: (data: {
+    orderId: string;
+    paymentId: string;
+    signature: string;
+    planId: string;
+    billingCycle: 'monthly' | 'yearly';
+  }) =>
+    request<{ success: boolean; subscription: any }>('/billing/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  submitManualRequest: (data: {
+    planId: string;
+    billingCycle?: 'monthly' | 'yearly';
+    notes?: string;
+  }) =>
+    request<SubscriptionRequest>('/billing/request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+export interface AdminGatewaySettings {
+  isEnabled: boolean;
+  keyId: string;
+  hasSecret: boolean;
+  keySecretMasked?: string;
+}
+
+export const adminBillingApi = {
+  listRequests: () => request<SubscriptionRequest[]>('/billing/admin/requests'),
+  approveRequest: (id: string, notes?: string) =>
+    request<SubscriptionRequest>(`/billing/admin/requests/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }),
+  rejectRequest: (id: string, notes?: string) =>
+    request<SubscriptionRequest>(`/billing/admin/requests/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }),
+  getGatewaySettings: () => request<AdminGatewaySettings>('/billing/admin/gateway-settings'),
+  updateGatewaySettings: (data: { isEnabled: boolean; keyId?: string; keySecret?: string }) =>
+    request<AdminGatewaySettings>('/billing/admin/gateway-settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+

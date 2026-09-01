@@ -82,6 +82,9 @@ export class SessionResponseDto {
   })
   restriction?: AccountRestrictionDto | null;
 
+  @ApiPropertyOptional({ type: String, example: 'user-uuid-123', nullable: true })
+  userId?: string | null;
+
   @ApiProperty({
     description:
       'Whether the gateway currently holds a live engine for this session. This is the precondition ' +
@@ -111,6 +114,7 @@ export class SessionResponseDto {
       status: session.status,
       phone: session.phone,
       pushName: session.pushName,
+      userId: session.userId || null,
       connectedAt: session.connectedAt,
       lastActive: session.lastActiveAt,
       createdAt: session.createdAt,

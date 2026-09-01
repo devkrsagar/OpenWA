@@ -16,6 +16,7 @@ import { TemplateModule } from './modules/template/template.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EngineModule } from './engine/engine.module';
 import { LoggerModule } from './common/services/logger.module';
@@ -140,6 +141,7 @@ if (dashboardServingEnabled && dashboardBuildPresent) {
           database: configService.get<string>('database.database', './data/main.sqlite'),
           entities: [
             __dirname + '/modules/auth/**/*.entity{.ts,.js}',
+            __dirname + '/modules/billing/**/*.entity{.ts,.js}',
             __dirname + '/modules/audit/**/*.entity{.ts,.js}',
           ],
           // Dedicated migrations dir for the main connection only (must NOT run the
@@ -290,6 +292,7 @@ if (dashboardServingEnabled && dashboardBuildPresent) {
     EventsModule, // WebSocket real-time events
     ...queueModules,
     AuthModule,
+    BillingModule,
     EngineModule,
     SessionModule,
     MessageModule,

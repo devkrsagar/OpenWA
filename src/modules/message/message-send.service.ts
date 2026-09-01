@@ -554,7 +554,7 @@ export class MessageSendService {
   async saveOutgoingMessage(sessionId: string, data: SaveOutgoingMessageData): Promise<Message> {
     const session = await this.sessionService.findOne(sessionId);
     const message = this.messageRepository.create({
-      sessionId,
+      sessionId: session ? session.id : sessionId,
       // An engine that sent a message but could not read its id back reports an empty id (see the
       // whatsapp-web.js adapter's `toMessageResult`). Store NULL rather than '': the
       // (sessionId, waMessageId) unique index is not partial, so a second id-less send in the same

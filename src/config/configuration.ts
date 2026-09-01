@@ -524,6 +524,15 @@ export default () => ({
     })(),
   },
 
+  // Mail / SMTP configuration
+  smtp: {
+    host: process.env.SMTP_HOST || 'openwa.webimaticsolutions.online',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    user: process.env.SMTP_USER || 'support@openwa.webimaticsolutions.online',
+    pass: process.env.SMTP_PASS,
+    from: process.env.SMTP_FROM || '"WebiMatic Solutions" <support@openwa.webimaticsolutions.online>',
+  },
+
   // Storage configuration
   storage: {
     type: process.env.STORAGE_TYPE || 'local',

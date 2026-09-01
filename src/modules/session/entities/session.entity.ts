@@ -80,6 +80,9 @@ export class Session {
   @Column({ type: dateColumnType(), nullable: true, transformer: DateTransformer })
   leaseExpiresAt!: Date | null;
 
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  userId!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

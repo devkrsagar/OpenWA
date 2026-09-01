@@ -161,7 +161,21 @@ async function bootstrap() {
     // the snapshot leaves a running gateway serving a document that fails schema validation.
     dropUnexpressibleOperations(document);
     exemptPublicOperations(document);
-    SwaggerModule.setup('api/docs', app, document);
+    SwaggerModule.setup('api/docs', app, document, {
+      customSiteTitle: 'WebiMatic Solutions - API Documentation',
+      customCss: `
+        .swagger-ui .topbar { display: none !important; }
+        .swagger-ui .info { margin: 24px 0 16px 0; }
+      `,
+    });
+
+    // Add convenience redirect from /api-docs to /api/docs
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.path === '/api-docs' || req.path === '/api-docs/') {
+        return res.redirect('/api/docs');
+      }
+      next();
+    });
   }
 
   // Protect the Bull Board queue UI (/api/admin/queues). It is mounted by

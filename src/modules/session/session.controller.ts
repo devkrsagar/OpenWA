@@ -8,10 +8,12 @@ import {
   Param,
   Query,
   Body,
+  Req,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { SessionService } from './session.service';
 import {
@@ -62,6 +64,17 @@ export class SessionController {
     return SessionResponseDto.fromEntity(session, this.sessionService.isActive(session.id));
   }
 
+  private getUserContext(req: Request, actor?: ApiKey): { userId: string | null; role: string } {
+    const user = (req as any).user;
+    if (user?.id) {
+      return { userId: user.id, role: user.role || 'user' };
+    }
+    if (actor?.role === ApiKeyRole.ADMIN) {
+      return { userId: actor.userId || null, role: 'admin' };
+    }
+    return { userId: actor?.userId || null, role: 'operator' };
+  }
+
   @Post()
   @RequireRole(ApiKeyRole.OPERATOR)
   // Creating a session has no existing session id for the class-level @SessionScoped fence to check,
@@ -75,8 +88,13 @@ export class SessionController {
     type: SessionResponseDto,
   })
   @ApiResponse({ status: 409, description: 'Session name already exists' })
-  async create(@Body() dto: CreateSessionDto): Promise<SessionResponseDto> {
-    const session = await this.sessionService.create(dto);
+  async create(
+    @Body() dto: CreateSessionDto,
+    @Req() req: Request,
+    @CurrentApiKey() apiKey?: ApiKey,
+  ): Promise<SessionResponseDto> {
+    const { userId } = this.getUserContext(req, apiKey);
+    const session = await this.sessionService.create(dto, userId);
     await this.auditService.logInfo(AuditAction.SESSION_CREATED, {
       sessionId: session.id,
       sessionName: session.name,
@@ -93,17 +111,27 @@ export class SessionController {
   })
   @ApiQuery({ name: 'limit', required: false, description: 'Max sessions to return (1-1000, default 1000)' })
   @ApiQuery({ name: 'offset', required: false, description: 'Number of sessions to skip (for paging)' })
+  @ApiQuery({ name: 'userId', required: false, description: 'Filter sessions by user ID (admin only)' })
   async findAll(
+    @Req() req: Request,
     @CurrentApiKey() apiKey?: ApiKey,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('userId') targetUserId?: string,
   ): Promise<SessionResponseDto[]> {
+    const { userId, role } = this.getUserContext(req, apiKey);
     // Scope to the key's allowedSessions so a session-restricted key cannot enumerate every
     // session. A null/empty allowlist (e.g. ADMIN) still lists all.
-    const sessions = await this.sessionService.findAll(apiKey?.allowedSessions, {
-      limit: limit ? parseInt(limit, 10) : undefined,
-      offset: offset ? parseInt(offset, 10) : undefined,
-    });
+    const sessions = await this.sessionService.findAll(
+      apiKey?.allowedSessions,
+      {
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
+      },
+      userId,
+      role,
+      targetUserId,
+    );
     return sessions.map(s => this.transformSession(s));
   }
 
@@ -116,8 +144,13 @@ export class SessionController {
     type: SessionResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Session not found' })
-  async findOne(@Param('sessionId', ParseUUIDPipe) id: string): Promise<SessionResponseDto> {
-    const session = await this.sessionService.findOne(id);
+  async findOne(
+    @Param('sessionId', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+    @CurrentApiKey() apiKey?: ApiKey,
+  ): Promise<SessionResponseDto> {
+    const { userId, role } = this.getUserContext(req, apiKey);
+    const session = await this.sessionService.findOne(id, userId, role);
     return this.transformSession(session);
   }
 
@@ -755,7 +788,10 @@ export class SessionController {
     description: 'Session statistics including counts and memory usage',
     type: SessionsOverviewResponseDto,
   })
-  async getStats(@CurrentApiKey() apiKey?: ApiKey): Promise<{
+  async getStats(
+    @Req() req: Request,
+    @CurrentApiKey() apiKey?: ApiKey,
+  ): Promise<{
     total: number;
     active: number;
     ready: number;
@@ -763,8 +799,9 @@ export class SessionController {
     byStatus: Record<string, number>;
     memoryUsage: { heapUsed: number; heapTotal: number; rss: number };
   }> {
+    const { userId, role } = this.getUserContext(req, apiKey);
     // Scope aggregate stats to the key's allowedSessions so a session-restricted key cannot enumerate
     // global session counts/status (the route carries no :sessionId for the guard to scope against).
-    return this.sessionService.getStats(apiKey?.allowedSessions);
+    return this.sessionService.getStats(apiKey?.allowedSessions, userId, role);
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,11 +20,11 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Languages,
+  Users as UsersIcon,
+  CreditCard,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { type UserRole } from '../hooks/useRole';
-import { languageOptions, resolveSupportedLanguage, rtlLanguages, type SupportedLanguage } from '../i18n';
 import { healthApi } from '../services/api';
 import './Layout.css';
 
@@ -39,9 +39,10 @@ const allNavItems = [
   { to: '/chats', icon: MessageSquare, key: 'chats' as const, adminOnly: false },
   { to: '/webhooks', icon: Webhook, key: 'webhooks' as const, adminOnly: false },
   { to: '/templates', icon: ClipboardList, key: 'templates' as const, adminOnly: false },
-  { to: '/api-keys', icon: Key, key: 'apiKeys' as const, adminOnly: true },
+  { to: '/users', icon: UsersIcon, key: 'users' as const, defaultLabel: 'Users', adminOnly: true },
+  { to: '/subscription', icon: CreditCard, key: 'subscription' as const, defaultLabel: 'Subscription', adminOnly: false },
+  { to: '/api-keys', icon: Key, key: 'apiKeys' as const, defaultLabel: 'API Keys', adminOnly: false },
   { to: '/message-tester', icon: Send, key: 'messageTester' as const, adminOnly: false },
-  // Backend /infra/* is ADMIN-only; hide the nav item from non-admins (UX + defense-in-depth).
   { to: '/infrastructure', icon: Server, key: 'infrastructure' as const, adminOnly: true },
   { to: '/plugins', icon: Puzzle, key: 'plugins' as const, adminOnly: true },
   { to: '/logs', icon: FileText, key: 'logs' as const, adminOnly: false },
@@ -50,7 +51,7 @@ const allNavItems = [
 const themeIcons = { light: Sun, dark: Moon, system: Monitor };
 
 export function Layout({ onLogout, userRole }: LayoutProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const ThemeIcon = themeIcons[theme];
   const themeLabel = t(`theme.${theme}`);
@@ -63,8 +64,6 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
   // Show the build-time version immediately, then replace it with the live running version from the
   // backend so a stale-built bundle can't display the wrong number. Falls back silently on error.
   const [version, setVersion] = useState(__APP_VERSION__);
-  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
-  const languageMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -102,36 +101,8 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
     };
   }, [isMobileOpen]);
 
-  useEffect(() => {
-    if (!isLanguageMenuOpen) return;
-
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!languageMenuRef.current?.contains(event.target as Node)) {
-        setIsLanguageMenuOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsLanguageMenuOpen(false);
-    };
-
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [isLanguageMenuOpen]);
-
   const toggleCollapse = () => setIsCollapsed(!isCollapsed);
   const toggleMobile = () => setIsMobileOpen(!isMobileOpen);
-
-  const currentLang = resolveSupportedLanguage(i18n.resolvedLanguage || i18n.language);
-  const languageLabel = languageOptions.find(option => option.value === currentLang)?.compactLabel ?? 'EN';
-  const changeLanguage = (language: SupportedLanguage) => {
-    setIsLanguageMenuOpen(false);
-    void i18n.changeLanguage(language);
-  };
-  const isRtl = rtlLanguages.includes(currentLang);
 
   return (
     <div className="layout">
@@ -170,23 +141,13 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
             title={isCollapsed ? t('common.expand') : t('common.collapse')}
             aria-label={isCollapsed ? t('common.expand') : t('common.collapse')}
           >
-            {isCollapsed ? (
-              isRtl ? (
-                <ChevronLeft size={16} />
-              ) : (
-                <ChevronRight size={16} />
-              )
-            ) : isRtl ? (
-              <ChevronRight size={16} />
-            ) : (
-              <ChevronLeft size={16} />
-            )}
+            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
         )}
 
         <nav className="sidebar-nav">
           {navItems.map(({ to, icon: Icon, key }) => {
-            const label = t(`nav.${key}`);
+            const label = t(`nav.${key}`, key === 'users' ? 'Users' : key === 'subscription' ? 'Subscription' : key);
             return (
               <NavLink
                 key={to}
@@ -204,34 +165,6 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="language-menu" ref={languageMenuRef}>
-            <button
-              className="theme-toggle-btn"
-              onClick={() => setIsLanguageMenuOpen(open => !open)}
-              title={t('common.language')}
-              aria-label={t('common.language')}
-              aria-haspopup="menu"
-              aria-expanded={isLanguageMenuOpen}
-            >
-              <Languages size={18} />
-              {!isCollapsed && <span>{languageLabel}</span>}
-            </button>
-            {isLanguageMenuOpen && (
-              <div className="language-menu-list" role="menu" aria-label={t('common.language')}>
-                {languageOptions.map(option => (
-                  <button
-                    key={option.value}
-                    className={`language-menu-item ${option.value === currentLang ? 'active' : ''}`}
-                    onClick={() => changeLanguage(option.value)}
-                    role="menuitemradio"
-                    aria-checked={option.value === currentLang}
-                  >
-                    <span>{option.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="appearance-menu">
             <button
               className="theme-toggle-btn"

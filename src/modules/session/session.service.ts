@@ -258,7 +258,7 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
     await this.ownership?.releaseAll();
   }
 
-  async create(dto: CreateSessionDto): Promise<Session> {
+  async create(dto: CreateSessionDto, userId?: string | null): Promise<Session> {
     // Check if session with same name exists
     const existing = await this.sessionRepository.findOne({
       where: { name: dto.name },
@@ -273,6 +273,7 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
       config: dto.config || {},
       proxyUrl: dto.proxyUrl || null,
       proxyType: dto.proxyType || null,
+      userId: userId || null,
       status: SessionStatus.CREATED,
     });
 
@@ -292,6 +293,7 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
     }
     this.logger.log(`Session created: ${saved.name}`, {
       sessionId: saved.id,
+      userId: saved.userId,
       action: 'create',
     });
 
@@ -304,22 +306,54 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
     return saved;
   }
 
-  async findAll(allowedSessions?: string[] | null, opts: ListOptions = {}): Promise<Session[]> {
-    // A session-restricted key only lists its own sessions; an unrestricted key (null/empty
-    // allowlist) lists all — mirroring the ApiKeyGuard allowedSessions model so a scoped key
-    // cannot enumerate every session through this aggregate route.
+  async findAll(
+    allowedSessions?: string[] | null,
+    opts: ListOptions = {},
+    userId?: string | null,
+    userRole?: string | null,
+    targetUserId?: string | null,
+  ): Promise<Session[]> {
     const { limit, offset } = resolveListWindow(opts.limit, opts.offset);
     const options: FindManyOptions<Session> = { order: { createdAt: 'DESC' }, take: limit, skip: offset };
-    if (allowedSessions && allowedSessions.length > 0) {
+
+    if (userRole === 'admin') {
+      if (targetUserId === 'all') {
+        if (allowedSessions && allowedSessions.length > 0) {
+          options.where = { id: In(allowedSessions) };
+        }
+      } else if (targetUserId) {
+        options.where =
+          allowedSessions && allowedSessions.length > 0
+            ? { id: In(allowedSessions), userId: targetUserId }
+            : { userId: targetUserId };
+      } else {
+        // Default Admin view: sessions belonging to admin or without user (legacy/admin created)
+        const adminConditions = userId ? [{ userId: IsNull() }, { userId }] : [{ userId: IsNull() }];
+        options.where = adminConditions;
+      }
+    } else if (userId) {
+      // Regular user view: ONLY their own sessions
+      options.where =
+        allowedSessions && allowedSessions.length > 0
+          ? { id: In(allowedSessions), userId }
+          : { userId };
+    } else if (allowedSessions && allowedSessions.length > 0) {
       options.where = { id: In(allowedSessions) };
     }
+
     const sessions = await this.sessionRepository.find(options);
     return sessions.map(session => this.attachRuntimeState(session));
   }
 
-  async findOne(id: string): Promise<Session> {
-    const session = await this.sessionRepository.findOne({ where: { id } });
+  async findOne(id: string, userId?: string | null, userRole?: string | null): Promise<Session> {
+    let session = await this.sessionRepository.findOne({ where: { id } });
     if (!session) {
+      session = await this.sessionRepository.findOne({ where: { name: id } });
+    }
+    if (!session) {
+      throw new NotFoundException(`Session with id '${id}' not found`);
+    }
+    if (userRole !== 'admin' && userId && session.userId && session.userId !== userId) {
       throw new NotFoundException(`Session with id '${id}' not found`);
     }
     return this.attachRuntimeState(session);
@@ -744,7 +778,11 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
   /**
    * Get overall session statistics for multi-session monitoring
    */
-  async getStats(allowedSessions?: string[] | null): Promise<{
+  async getStats(
+    allowedSessions?: string[] | null,
+    userId?: string | null,
+    userRole?: string | null,
+  ): Promise<{
     total: number;
     active: number;
     ready: number;
@@ -765,6 +803,13 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
       .addSelect('COUNT(session.id)', 'count');
     if (scope) {
       qb.where('session.id IN (:...scope)', { scope });
+    }
+    if (userRole !== 'admin' && userId) {
+      qb.andWhere('session.userId = :userId', { userId });
+    } else if (userRole === 'admin') {
+      if (userId) {
+        qb.andWhere('(session.userId = :userId OR session.userId IS NULL)', { userId });
+      }
     }
     const rows = await qb.groupBy('session.status').getRawMany<{ status: string; count: string }>();
 
